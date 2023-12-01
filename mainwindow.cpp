@@ -1,187 +1,173 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
+#include "qtutils.h"
 #include <qopenglcontext.h>
-#include <QActionGroup>
-#include <QButtonGroup>
-
-template<typename F>
-static void setupMenuRadioButtons(QObject *owner, std::initializer_list<QAction *> actions, F func)
-{
-	auto groupTool = new QActionGroup(owner);
-
-	for (auto &action : actions)
-	{
-		QObject::connect(action, &QAction::triggered, func);
-		groupTool->addAction(action);
-	}
-}
-
-template<typename F>
-static void setupGroupedButtons(QObject *owner, std::initializer_list<QAbstractButton *> buttons, F func)
-{
-	auto groupTool = new QButtonGroup(owner);
-
-	for (auto &button : buttons)
-	{
-		QObject::connect(button, &QAbstractButton::toggled, func);
-		groupTool->addButton(button);
-	}
-}
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
-    ui(new Ui::MainWindow),
+    _ui(new Ui::MainWindow),
 	settings(QSettings::IniFormat, QSettings::UserScope, "Altered Softworks", "QTMDL")
 {
 	_instance = this;
 
-    ui->setupUi(this);
-
-    QObject::connect(this->ui->actionOpen, &QAction::triggered, this, &MainWindow::openClicked);
-	QObject::connect(this->ui->actionCapture_RenderDoc_Frame, &QAction::triggered, this->ui->openGLWidget, &QMDLRenderer::captureRenderDoc);
-
-	QObject::connect(this->ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::frameChanged);
-	QObject::connect(this->ui->toolButton_18, &QToolButton::clicked, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepSub); });
-	QObject::connect(this->ui->toolButton_19, &QToolButton::clicked, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepAdd); });
-
-	QObject::connect(this->ui->actionShow_Grid, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionShow_Origin, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionVertice_Ticks, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-
-	setupMenuRadioButtons(this, {
-		this->ui->actionWireframe, this->ui->actionFlat, this->ui->actionTextured
-	}, [this] () { this->ui->openGLWidget->update(); });
+    _ui->setupUi(this);
 	
-	QObject::connect(this->ui->actionDraw_Backfaces, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionPer_Vertex_Normals, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionShading, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+    QObject::connect(this->_ui->actionNew, &QAction::triggered, this, &MainWindow::newClicked);
+    QObject::connect(this->_ui->actionOpen, &QAction::triggered, this, &MainWindow::openClicked);
+	QObject::connect(this->_ui->actionCapture_RenderDoc_Frame, &QAction::triggered, this->_ui->openGLWidget, &QMDLRenderer::captureRenderDoc);
 
-	setupMenuRadioButtons(this, {
-		this->ui->actionWireframe_2, this->ui->actionFlat_2, this->ui->actionTextured_2
-	}, [this] () { this->ui->openGLWidget->update(); });
-	
-	QObject::connect(this->ui->actionDraw_Backfaces_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionPer_Vertex_Normals_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	QObject::connect(this->ui->actionShading_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
-	
-	QObject::connect(this->ui->spinBox, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
-	QObject::connect(this->ui->spinBox_2, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
-	QObject::connect(this->ui->spinBox_3, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
-	QObject::connect(this->ui->toolButton_14, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
-	QObject::connect(this->ui->toolButton_15, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
+	QObject::connect(this->_ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::frameChanged);
+	QObject::connect(this->_ui->toolButton_18, &QToolButton::clicked, [this] () { this->_ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepSub); });
+	QObject::connect(this->_ui->toolButton_19, &QToolButton::clicked, [this] () { this->_ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepAdd); });
 
-	setupGroupedButtons(this, {
-		this->ui->toolButton_7, this->ui->toolButton_8, this->ui->toolButton_9,
-		this->ui->toolButton_10, this->ui->toolButton_6, this->ui->toolButton_20, this->ui->toolButton_21
+	QObject::connect(this->_ui->actionShow_Grid, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionShow_Origin, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionVertice_Ticks, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+
+	QtUtils::setupMenuRadioButtons(this, {
+		this->_ui->actionWireframe, this->_ui->actionFlat, this->_ui->actionTextured
+	}, [this] () { this->_ui->openGLWidget->update(); });
+	
+	QObject::connect(this->_ui->actionDraw_Backfaces, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionPer_Vertex_Normals, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionShading, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+
+	QtUtils::setupMenuRadioButtons(this, {
+		this->_ui->actionWireframe_2, this->_ui->actionFlat_2, this->_ui->actionTextured_2
+	}, [this] () { this->_ui->openGLWidget->update(); });
+	
+	QObject::connect(this->_ui->actionDraw_Backfaces_2, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionPer_Vertex_Normals_2, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->_ui->actionShading_2, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
+	
+	QObject::connect(this->_ui->spinBox, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->_ui->spinBox_2, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->_ui->spinBox_3, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->_ui->toolButton_14, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
+	QObject::connect(this->_ui->toolButton_15, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
+
+	QtUtils::setupGroupedButtons(this, {
+		this->_ui->toolButton_7, this->_ui->toolButton_8, this->_ui->toolButton_9,
+		this->_ui->toolButton_10, this->_ui->toolButton_6, this->_ui->toolButton_20, this->_ui->toolButton_21
 	}, [this] () { });
 
 	QObject::connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] (Qt::ApplicationState state) {
 		if (state != Qt::ApplicationState::ApplicationActive)
-			this->ui->openGLWidget->focusLost();
+			this->_ui->openGLWidget->focusLost();
+	});
+	
+	QObject::connect(this->_ui->actionUndo, &QAction::triggered, [this] () { this->undoRedo.undo(this->_activeModel); this->_ui->openGLWidget->update(); });
+	QObject::connect(this->_ui->actionRedo, &QAction::triggered, [this] () { this->undoRedo.redo(this->_activeModel); this->_ui->openGLWidget->update(); });
+
+	QObject::connect(this->_ui->actionSkins, &QAction::triggered, [this] () {
+		if (this->_uveditor.isVisible())
+			this->_uveditor.activateWindow();
+		else
+			this->_uveditor.show();
 	});
 }
 
 MainWindow::~MainWindow()
 {
-    delete ui;
+	delete _ui;
 }
 
 /*static*/ MainWindow *MainWindow::_instance = nullptr;
 
 bool MainWindow::showGrid() const
 {
-	return this->ui->actionShow_Grid->isChecked();
+	return this->_ui->actionShow_Grid->isChecked();
 }
 
 bool MainWindow::showOrigin() const
 {
-	return this->ui->actionShow_Origin->isChecked();
+	return this->_ui->actionShow_Origin->isChecked();
 }
 
 bool MainWindow::vertexTicks() const
 {
-	return this->ui->actionVertice_Ticks->isChecked();
-}
-
-int MainWindow::activeFrame() const
-{
-	return this->ui->horizontalSlider->value();
+	return this->_ui->actionVertice_Ticks->isChecked();
 }
 
 int MainWindow::animationFrameRate() const
 {
-	return this->ui->spinBox->value();
+	return this->_ui->spinBox->value();
 }
 
 bool MainWindow::animationInterpolated() const
 {
-	return this->ui->toolButton_15->isChecked();
+	return this->_ui->toolButton_15->isChecked();
 }
 
 int MainWindow::animationStartFrame() const
 {
-	return this->ui->spinBox_2->value();
+	return this->_ui->spinBox_2->value();
 }
 
 int MainWindow::animationEndFrame() const
 {
-	return this->ui->spinBox_3->value();
+	return this->_ui->spinBox_3->value();
 }
 
 RenderParameters MainWindow::getRenderParameters(bool is_2d) const
 {
 	RenderMode mode;
 
-	if ((is_2d ? this->ui->actionWireframe : this->ui->actionWireframe_2)->isChecked())
+	if ((is_2d ? this->_ui->actionWireframe : this->_ui->actionWireframe_2)->isChecked())
 		mode = RenderMode::Wireframe;
-	else if ((is_2d ? this->ui->actionFlat : this->ui->actionFlat_2)->isChecked())
+	else if ((is_2d ? this->_ui->actionFlat : this->_ui->actionFlat_2)->isChecked())
 		mode = RenderMode::Flat;
 	else
 		mode = RenderMode::Textured;
 
 	return {
 		mode,
-		(is_2d ? this->ui->actionDraw_Backfaces : this->ui->actionDraw_Backfaces_2)->isChecked(),
-		(is_2d ? this->ui->actionPer_Vertex_Normals : this->ui->actionPer_Vertex_Normals_2)->isChecked(),
-		(is_2d ? this->ui->actionShading : this->ui->actionShading_2)->isChecked(),
+		(is_2d ? this->_ui->actionDraw_Backfaces : this->_ui->actionDraw_Backfaces_2)->isChecked(),
+		(is_2d ? this->_ui->actionPer_Vertex_Normals : this->_ui->actionPer_Vertex_Normals_2)->isChecked(),
+		(is_2d ? this->_ui->actionShading : this->_ui->actionShading_2)->isChecked(),
 	};
 }
 
 EditorTool MainWindow::selectedTool() const
 {
-	if (this->ui->toolButton_6->isChecked())
+	if (this->_ui->toolButton_6->isChecked())
 		return EditorTool::Pan;
-	else if (this->ui->toolButton_7->isChecked())
+	else if (this->_ui->toolButton_7->isChecked())
 		return EditorTool::Select;
-	else if (this->ui->toolButton_8->isChecked())
+	else if (this->_ui->toolButton_8->isChecked())
 		return EditorTool::Move;
-	else if (this->ui->toolButton_9->isChecked())
+	else if (this->_ui->toolButton_9->isChecked())
 		return EditorTool::Rotate;
-	else if (this->ui->toolButton_10->isChecked())
+	else if (this->_ui->toolButton_10->isChecked())
 		return EditorTool::Scale;
-	else if (this->ui->toolButton_20->isChecked())
+	else if (this->_ui->toolButton_20->isChecked())
 		return EditorTool::CreateVertex;
-	else if (this->ui->toolButton_21->isChecked())
+	else if (this->_ui->toolButton_21->isChecked())
 		return EditorTool::CreateFace;
 
 	throw std::runtime_error("wat");
 }
 
+QMDLRenderer &MainWindow::mdlRenderer()
+{
+	return *_ui->openGLWidget;
+}
+
 void MainWindow::setCurrentWorldPosition(const QVector3D &position)
 {
-	this->ui->doubleSpinBox->setValue(position.x());
-	this->ui->doubleSpinBox_2->setValue(position.y());
-	this->ui->doubleSpinBox_3->setValue(position.z());
+	this->_ui->doubleSpinBox->setValue(position.x());
+	this->_ui->doubleSpinBox_2->setValue(position.y());
+	this->_ui->doubleSpinBox_3->setValue(position.z());
 }
 
 void MainWindow::animationChanged()
 {
-	this->ui->openGLWidget->resetAnimation();
+	this->_ui->openGLWidget->resetAnimation();
 }
 
 void MainWindow::toggleAnimation()
 {
-	this->ui->openGLWidget->setAnimated(this->ui->toolButton_14->isChecked());
+	this->_ui->openGLWidget->setAnimated(this->_ui->toolButton_14->isChecked());
 }
 
 #include <QFileDialog>
@@ -444,7 +430,7 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
     pcx_t   pcx;
     int     x, y;
     uint8_t dataByte, runLength;
-    byte    *pix;
+    byte    *pix, *raw_pix;
 
     //
     // parse the PCX file
@@ -468,17 +454,22 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 	skin.width = pcx.xmax + 1;
 	skin.height = pcx.ymax + 1;
 
-	skin.data.resize(skin.width * skin.height * 4);
-	pix = skin.data.data();
+	SkinPaletteData &raw_data = skin.raw_data.emplace(SkinPaletteData{});
+	raw_data.data.resize(skin.width * skin.height);
+	std::vector<uint8_t> &palette = raw_data.palette.emplace(std::vector<uint8_t>(static_cast<size_t>(768)));
 
-	byte palette[768];
+	skin.image = QImage(skin.width, skin.height, QImage::Format_ARGB32);
+
+	raw_pix = raw_data.data.data();
+	pix = skin.image.bits();
+
 	skinStream.device()->seek(skinStream.device()->size() - 768);
 
-	skinStream.readRawData(reinterpret_cast<char *>(palette), 768);
+	skinStream.readRawData(reinterpret_cast<char *>(palette.data()), 768);
 
 	skinStream.device()->seek(sizeof(pcx_t));
 
-    for (y=0 ; y<=pcx.ymax ; y++, pix += (pcx.xmax + 1) * 4)
+    for (y=0 ; y<=pcx.ymax ; y++, pix += (pcx.xmax + 1) * 4, raw_pix += (pcx.xmax + 1))
     {
         for (x=0; x<=pcx.xmax ; )
         {
@@ -494,10 +485,11 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 
             while(runLength-- > 0)
 			{
-                pix[(x * 4) + 0] = palette[(dataByte * 3) + 0];
+                pix[(x * 4) + 2] = palette[(dataByte * 3) + 0];
                 pix[(x * 4) + 1] = palette[(dataByte * 3) + 1];
-                pix[(x * 4) + 2] = palette[(dataByte * 3) + 2];
+                pix[(x * 4) + 0] = palette[(dataByte * 3) + 2];
 				pix[(x * 4) + 3] = 0xFF;
+				raw_pix[x] = dataByte;
 				x++;
 			}
         }
@@ -566,7 +558,7 @@ ModelData LoadMD2(QString filename)
 	{
 		dstvert_t v;
 		stream >> v.s >> v.t;
-		st = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
+		st.pos = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
 	}
 
 	file.seek(header.ofs_tris);
@@ -629,31 +621,54 @@ ModelData LoadMD2(QString filename)
 
 void MainWindow::loadModel(QString path)
 {
-    activeModel = LoadMD2(path);
-	this->ui->openGLWidget->setModel(&activeModel);
+    _activeModel = LoadMD2(path);
+	this->_uveditor.modelLoaded();
+	this->_ui->openGLWidget->modelLoaded();
+	frameCountChanged();
+}
 
-	int maxFrames = (int) (activeModel.frames.size() - 1);
+void MainWindow::clearModel()
+{
+	_activeModel = {};
+	this->_uveditor.modelLoaded();
+	this->_ui->openGLWidget->modelLoaded();
+	frameCountChanged();
+}
 
-	this->ui->horizontalSlider->setMaximum(maxFrames);
-	this->ui->spinBox_2->setMaximum(maxFrames);
-	this->ui->spinBox_3->setMaximum(maxFrames);
-
-	frameChanged();
+void MainWindow::newClicked()
+{
+	// TODO: are you sure?
+	clearModel();
 }
 
 void MainWindow::openClicked()
 {
+	// TODO: are you sure?
+
     QFileDialog dlg(this, "Load MD2", "", "*.md2");
     if (dlg.exec() == QFileDialog::Accepted)
 		loadModel(dlg.selectedFiles()[0]);
 }
 
+void MainWindow::frameCountChanged()
+{
+	int maxFrames = (int) (_activeModel.frames.size() - 1);
+
+	this->_ui->horizontalSlider->setMaximum(maxFrames);
+	this->_ui->spinBox_2->setMaximum(maxFrames);
+	this->_ui->spinBox_3->setMaximum(maxFrames);
+
+	frameChanged();
+}
+
 void MainWindow::frameChanged()
 {
-	this->ui->openGLWidget->update();
+	_activeModel.selectedFrame = this->_ui->horizontalSlider->value();
 
-	this->ui->label_5->setText(QString::asprintf("%i", this->activeFrame()));
+	this->_ui->openGLWidget->update();
 
-	if (activeModel.frames.size())
-		this->ui->label_frameName->setText(QString::fromStdString(activeModel.frames[this->activeFrame()].name));
+	this->_ui->label_5->setText(QString::asprintf("%i", _activeModel.selectedFrame));
+
+	if (_activeModel.frames.size())
+		this->_ui->label_frameName->setText(QString::fromStdString(_activeModel.frames[_activeModel.selectedFrame].name));
 }

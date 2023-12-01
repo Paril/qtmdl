@@ -62,13 +62,14 @@ class QMDLRenderer : public QOpenGLWidget
 #endif
 
 public:
-    QMDLRenderer(QWidget *parent);
+    QMDLRenderer(QWidget *parent = nullptr);
 
-    void setModel(const ModelData *model);
     void captureRenderDoc(bool);
     void resetAnimation();
     void setAnimated(bool animating);
     void focusLost();
+    void modelLoaded();
+    void selectedSkinChanged();
 
 protected:
     void initializeGL() override;
@@ -88,12 +89,12 @@ private:
 
     QuadRect getQuadrantRect(QuadrantFocus quadrant);
     QuadrantFocus getQuadrantFocus(QPoint xy);
-    void dragMatrix(QMatrix4x4 &modelview); 
     void getQuadrantMatrices(QuadrantFocus quadrant, Matrix4 &projection, Matrix4 &modelview);
     void clearQuadrant(QuadRect rect, QVector4D color);
     void drawModels(QuadrantFocus quadrant, bool is_2d);
     void draw2D(Orientation2D orientation, QuadrantFocus quadrant);
     void draw3D(QuadrantFocus quadrant);
+    QMatrix4x4 getDragMatrix();
     QVector3D mouseToWorld(QPoint pos);
     
     std::unique_ptr<QOpenGLDebugLogger> _logger;
@@ -113,13 +114,13 @@ private:
     std::vector<GPUPointData> _pointData;
     std::vector<QVector3D> _smoothNormalData, _flatNormalData;
     GLuint _vao, _pointVao, _axisVao, _gridVao;
-    const ModelData *_model = nullptr;
     float _2dZoom = 1.0f;
     QVector3D _2dOffset = {};
     Camera _camera;
 #ifdef RENDERDOC_SUPPORT
     bool _doRenderDoc;
 #endif
+    ModelData &activeModel();
 
 	GLuint createShader(GLenum type, const char *source);
 	GLuint createProgram(GLuint vertexShader, GLuint fragmentShader);

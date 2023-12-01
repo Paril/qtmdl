@@ -17,8 +17,6 @@ struct GPUAxisData
 QMDLRenderer::QMDLRenderer(QWidget *parent) :
     QOpenGLWidget(parent)
 {
-    setMouseTracking(true);
-
     _camera.setBehavior(Camera::CameraBehavior::CAMERA_BEHAVIOR_ORBIT);
     _camera.lookAt({ 25.f, 0, 0 }, {}, { 0, 1, 0 });
 	_camera.zoom(Camera::DEFAULT_ORBIT_OFFSET_DISTANCE, _camera.getOrbitMinZoom(), _camera.getOrbitMaxZoom());
@@ -340,11 +338,34 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
 {
     if (!_dragging)
         return;
+    
+    if (_dragging && (_focusedQuadrant == QuadrantFocus::TopLeft || _focusedQuadrant == QuadrantFocus::TopRight ||
+        _focusedQuadrant == QuadrantFocus::BottomLeft || _focusedQuadrant == QuadrantFocus::BottomRight))
+    {
+        Matrix4 drag = getDragMatrix();
+
+        if (!drag.isIdentity())
+        {
+            MainWindow::instance().undoRedo.push(activeModel());
+
+            for (auto &frame : activeModel().frames)
+                for (auto &vert : frame.vertices)
+                {
+                    vert.position = drag.map(vert.position);
+                    vert.normal = drag.mapVector(vert.normal);
+                }
+        }
+    }
+    
+    bool adjust_vert = _focusedQuadrant == QuadrantFocus::Horizontal || _focusedQuadrant == QuadrantFocus::Center;
+    bool adjust_horz = _focusedQuadrant == QuadrantFocus::Vertical || _focusedQuadrant == QuadrantFocus::Center;
+                
+    if (adjust_vert)
+        MainWindow::instance().settings.setValue("HorizontalSplit", _horizontalSplit);
+    if (adjust_horz)
+        MainWindow::instance().settings.setValue("VerticalSplit", _verticalSplit);
 
     _dragging = false;
-    
-    MainWindow::instance().settings.setValue("HorizontalSplit", _horizontalSplit);
-    MainWindow::instance().settings.setValue("VerticalSplit", _verticalSplit);
 
     mouseMoveEvent(e);
     update();
@@ -361,41 +382,45 @@ constexpr T Wrap(T v, T min, T max)
     return min + (v - min) % range;
 }
 
-void QMDLRenderer::dragMatrix(QMatrix4x4 &modelview)
+QMatrix4x4 QMDLRenderer::getDragMatrix()
 {
+    QMatrix4x4 matrix;
+    
     if (!_dragging || _focusedQuadrant == QuadrantFocus::None)
-        return;
+        return matrix;
         
     float xDelta = _dragDelta.x() / _2dZoom;
     float yDelta = _dragDelta.y() / _2dZoom;
-    
+
     if (MainWindow::instance().selectedTool() == EditorTool::Move)
     {
         if (_focusedQuadrant == QuadrantFocus::TopLeft)
-            modelview.translate(-yDelta, -xDelta, 0);
+            matrix.translate(-yDelta, -xDelta, 0);
         else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
-            modelview.translate(0, -xDelta, yDelta);
+            matrix.translate(0, -xDelta, yDelta);
         else if (_focusedQuadrant == QuadrantFocus::BottomRight)
-            modelview.translate(xDelta, 0, yDelta);
+            matrix.translate(xDelta, 0, yDelta);
     }
     else if (MainWindow::instance().selectedTool() == EditorTool::Scale)
     {
         float s = 1.0f + (_dragDelta.y() * 0.01f) / _2dZoom;
-        modelview.scale(s, s, s);
+        matrix.scale(s, s, s);
     }
     else if (MainWindow::instance().selectedTool() == EditorTool::Rotate)
     {
         QuadRect rect = getQuadrantRect(_focusedQuadrant);
         float r = 360.f * (_dragDelta.y() / (float) rect.h);
-        modelview.translate(_dragWorldPos);
+        matrix.translate(_dragWorldPos);
         if (_focusedQuadrant == QuadrantFocus::TopLeft)
-            modelview.rotate(r, QVector3D(0, 0, -1));
+            matrix.rotate(r, QVector3D(0, 0, -1));
         else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
-            modelview.rotate(r, QVector3D(1, 0, 0));
+            matrix.rotate(r, QVector3D(1, 0, 0));
         else if (_focusedQuadrant == QuadrantFocus::BottomRight)
-            modelview.rotate(r, QVector3D(0, 1, 0));
-        modelview.translate(-_dragWorldPos);
+            matrix.rotate(r, QVector3D(0, 1, 0));
+        matrix.translate(-_dragWorldPos);
     }
+
+    return matrix;
 }
 
 void QMDLRenderer::focusLost()
@@ -559,7 +584,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         glBindBuffer(GL_ARRAY_BUFFER, _gridBuffer);
         glVertexAttrib4f(2, 1.0f, 0.5f, 0.0f, 0.50f);
         glVertexAttrib2f(1, 1.0f, 1.0f);
-        glDrawArrays(GL_LINES, 0, _gridSize);
+        glDrawArrays(GL_LINES, 0, (GLsizei) _gridSize);
     }
     
     if (MainWindow::instance().showOrigin())
@@ -573,12 +598,12 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         glEnable(GL_DEPTH_TEST);
     }
 
-    if (!_model)
-        return;
-    
     glUseProgram(_modelProgram.program);
     glUniformMatrix4fv(_modelProgram.projectionUniformLocation, 1, false, projection.data());
-    dragMatrix(modelview);
+
+    if (_dragging && (_focusedQuadrant == QuadrantFocus::TopLeft || _focusedQuadrant == QuadrantFocus::TopRight ||
+        _focusedQuadrant == QuadrantFocus::BottomLeft || _focusedQuadrant == QuadrantFocus::BottomRight))
+        modelview *= getDragMatrix();
     glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     glUniform1i(_modelProgram.shadedUniformLocation, params.shaded);
@@ -607,7 +632,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     else
         glBindTexture(GL_TEXTURE_2D, _modelTexture);
 
-    glDrawArrays(GL_TRIANGLES, 0, _bufferData.size());
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei) _bufferData.size());
     
     if (MainWindow::instance().vertexTicks())
     {
@@ -637,7 +662,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
         glBindVertexArray(_pointVao);
         glBindBuffer(GL_ARRAY_BUFFER, _pointBuffer);
-        glDrawArrays(GL_POINTS, 0, _pointData.size());
+        glDrawArrays(GL_POINTS, 0, (GLsizei) _pointData.size());
 
         glDepthFunc(GL_LESS);
     }
@@ -726,8 +751,7 @@ QVector3D QMDLRenderer::mouseToWorld(QPoint pos)
     
 void QMDLRenderer::paintGL()
 {
-    if (_model)
-        this->rebuildBuffer();
+    this->rebuildBuffer();
 
 #ifdef RENDERDOC_SUPPORT
     if (_doRenderDoc && rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
@@ -848,14 +872,15 @@ static void uploadToBuffer(GLuint buffer, bool full_upload, const std::vector<T>
 
 void QMDLRenderer::rebuildBuffer()
 {
-    size_t count = _model->triangles.size() * 3;
+    auto &model = activeModel();
+    size_t count = model.triangles.size() * 3;
     bool full_upload = _bufferData.size() < count;
     _bufferData.resize(count);
     _pointData.resize(count);
     _smoothNormalData.resize(count);
     _flatNormalData.resize(count);
     size_t n = 0;
-    int cur_frame, next_frame;
+    int cur_frame = model.selectedFrame, next_frame = model.selectedFrame;
     float frac = 0.0f;
 
     if (_animationTimer.isValid())
@@ -869,27 +894,21 @@ void QMDLRenderer::rebuildBuffer()
         int start = MainWindow::instance().animationStartFrame();
         int end = MainWindow::instance().animationEndFrame();
 
-        if (end <= start)
-            cur_frame = next_frame = MainWindow::instance().activeFrame();
-        else
+        if (end > start)
         {
             cur_frame = start + (frame_offset % (end - start));
             next_frame = start + ((frame_offset + 1) % (end - start));
         }
     }
-    else
-    {
-        cur_frame = next_frame = MainWindow::instance().activeFrame();
-    }
 
-    for (auto &tri : this->_model->triangles)
+    for (auto &tri : model.triangles)
     {
-        auto &from = this->_model->frames[cur_frame];
-        auto &to = this->_model->frames[next_frame];
+        auto &from = model.frames[cur_frame];
+        auto &to = model.frames[next_frame];
         
-        auto &gv0 = this->_model->vertices[tri.vertices[0]];
-        auto &gv1 = this->_model->vertices[tri.vertices[1]];
-        auto &gv2 = this->_model->vertices[tri.vertices[2]];
+        auto &gv0 = model.vertices[tri.vertices[0]];
+        auto &gv1 = model.vertices[tri.vertices[1]];
+        auto &gv2 = model.vertices[tri.vertices[2]];
 
         auto &cv0 = from.vertices[tri.vertices[0]];
         auto &cv1 = from.vertices[tri.vertices[1]];
@@ -957,9 +976,9 @@ void QMDLRenderer::rebuildBuffer()
             };
         }
             
-        auto &st0 = this->_model->texcoords[tri.texcoords[0]];
-        auto &st1 = this->_model->texcoords[tri.texcoords[1]];
-        auto &st2 = this->_model->texcoords[tri.texcoords[2]];
+        auto &st0 = model.texcoords[tri.texcoords[0]];
+        auto &st1 = model.texcoords[tri.texcoords[1]];
+        auto &st2 = model.texcoords[tri.texcoords[2]];
 
         {
             auto &ov0 = _bufferData[n + 0];
@@ -982,9 +1001,9 @@ void QMDLRenderer::rebuildBuffer()
             _flatNormalData[n + 1] =
             _flatNormalData[n + 2] = (nv0 + nv1 + nv2) / 3;
             
-            ov0.texcoord = st0;
-            ov1.texcoord = st1;
-            ov2.texcoord = st2;
+            ov0.texcoord = st0.pos;
+            ov1.texcoord = st1.pos;
+            ov2.texcoord = st2.pos;
         }
 
         {
@@ -1010,16 +1029,36 @@ void QMDLRenderer::rebuildBuffer()
     uploadToBuffer(_flatNormalBuffer, full_upload, _flatNormalData);
 }
 
-void QMDLRenderer::setModel(const ModelData *model)
+ModelData &QMDLRenderer::activeModel()
 {
-    this->_model = model;
+    return MainWindow::instance().activeModel();
+}
+
+void QMDLRenderer::selectedSkinChanged()
+{
+    makeCurrent();
+    update();
 
     glBindTexture(GL_TEXTURE_2D, _modelTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, model->skins[0].width, model->skins[0].height, 0, GL_RGBA, GL_UNSIGNED_BYTE, model->skins[0].data.data());
+
+    if (activeModel().skins.empty())
+    {
+        static constexpr uint32_t whitePixels = 0xFFFFFFFF;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_BGRA, GL_UNSIGNED_BYTE, &whitePixels);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        return;
+    }
+
+    int skin = activeModel().selectedSkin.value();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, activeModel().skins[skin].width, activeModel().skins[skin].height, 0, GL_BGRA, GL_UNSIGNED_BYTE, activeModel().skins[skin].image.bits());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    //glGenerateMipmap(GL_TEXTURE_2D);
+}
 
+void QMDLRenderer::modelLoaded()
+{
+    selectedSkinChanged();
 	this->update();
 }
 

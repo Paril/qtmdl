@@ -4,6 +4,10 @@
 #include <QSettings>
 #include <QOpenGLDebugLogger>
 #include "modeldata.h"
+#include "undoredo.h"
+#include "uveditor.h"
+#include "qmdlrenderer.h"
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -48,22 +52,29 @@ public:
     bool showGrid() const;
     bool showOrigin() const;
     bool vertexTicks() const;
-    int activeFrame() const;
     int animationFrameRate() const;
     bool animationInterpolated() const;
     int animationStartFrame() const;
     int animationEndFrame() const;
     RenderParameters getRenderParameters(bool is_2d) const;
     EditorTool selectedTool() const;
+    constexpr ModelData &activeModel() { return _activeModel; }
+    constexpr const ModelData &activeModel() const { return _activeModel; }
+    constexpr UVEditor &uvEditor() { return _uveditor; }
+    QMDLRenderer &mdlRenderer();
 
     void setCurrentWorldPosition(const QVector3D &position);
+    void frameCountChanged();
 
     QSettings settings;
+    UndoRedo undoRedo;
 
 private:
-    Ui::MainWindow *ui;
-    ModelData activeModel;
+    Ui::MainWindow *_ui;
+    ModelData _activeModel;
+    UVEditor _uveditor;
 
+    void newClicked();
     void openClicked();
     void frameChanged();
     void animationChanged();
@@ -73,4 +84,5 @@ private:
 
 public:
     void loadModel(QString path);
+    void clearModel();
 };
