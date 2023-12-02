@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QSettings>
 #include <QOpenGLDebugLogger>
 #include "modeldata.h"
 #include "undoredo.h"
@@ -66,7 +65,6 @@ public:
     void setCurrentWorldPosition(const QVector3D &position);
     void frameCountChanged();
 
-    QSettings settings;
     UndoRedo undoRedo;
 
 private:

@@ -8,6 +8,19 @@ namespace Ui {
 class UVEditor;
 }
 
+enum class LineDisplayMode
+{
+    None,
+    Simple
+};
+
+enum class VertexDisplayMode
+{
+    None,
+    Pixels,
+    Squares
+};
+
 class UVEditor : public QMainWindow
 {
     Q_OBJECT
@@ -18,6 +31,8 @@ public:
 
     void show();
     constexpr int getZoom() const { return _zoom; }
+    LineDisplayMode getLineDisplayMode() const;
+    VertexDisplayMode getVertexDisplayMode() const;
 
     void resetZoom();
     void modelLoaded();

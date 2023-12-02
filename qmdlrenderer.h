@@ -12,7 +12,16 @@
 #endif
 #include "modeldata.h"
 
-using VertexColor = std::array<uint8_t, 4>;
+struct VertexColor
+{
+    std::array<uint8_t, 4>  data;
+
+    constexpr VertexColor() = default;
+    inline VertexColor(const QColor &c) :
+        data({ (uint8_t) c.red(), (uint8_t) c.green(), (uint8_t) c.blue(), (uint8_t) c.alpha() })
+    {
+    }
+};
 
 struct GPUVertexData
 {
@@ -104,7 +113,6 @@ private:
     QVector3D _dragWorldPos;
     QPoint _dragPos, _downPos, _dragDelta;
     Qt::MouseButton _dragButton;
-    float _horizontalSplit, _verticalSplit;
     ProgramShared _modelProgram, _simpleProgram;
 
     GLuint _buffer, _pointBuffer, _smoothNormalBuffer, _flatNormalBuffer, _axisBuffer, _gridBuffer;

@@ -7,11 +7,17 @@
 #include <QFile>
 #include <QDir>
 #include <QFileInfo>
+#include "settings.h"
+
+constexpr GLuint ATTRIB_POSITION = 0;
+constexpr GLuint ATTRIB_TEXCOORD = 1;
+constexpr GLuint ATTRIB_COLOR = 2;
+constexpr GLuint ATTRIB_NORMAL = 3;
 
 struct GPUAxisData
 {
-    QVector3D               position;
-    std::array<uint8_t, 4>  color;
+    QVector3D   position;
+    VertexColor color;
 };
 
 QMDLRenderer::QMDLRenderer(QWidget *parent) :
@@ -20,9 +26,6 @@ QMDLRenderer::QMDLRenderer(QWidget *parent) :
     _camera.setBehavior(Camera::CameraBehavior::CAMERA_BEHAVIOR_ORBIT);
     _camera.lookAt({ 25.f, 0, 0 }, {}, { 0, 1, 0 });
 	_camera.zoom(Camera::DEFAULT_ORBIT_OFFSET_DISTANCE, _camera.getOrbitMinZoom(), _camera.getOrbitMaxZoom());
-    
-    _horizontalSplit = MainWindow::instance().settings.value("HorizontalSplit", 0.5f).toFloat();
-    _verticalSplit = MainWindow::instance().settings.value("VerticalSplit", 0.5f).toFloat();
 }
 
 class QFileStream : public tcpp::IInputStream
@@ -100,15 +103,19 @@ void QMDLRenderer::generateGrid(float grid_size, size_t count)
 
 void QMDLRenderer::generateAxis()
 {
-    constexpr GPUAxisData axisData[] = {
-        { { 0.0f, 0.0f, 0.0f }, { 255, 0, 0, 127 } },
-        { { 32.0f, 0.0f, 0.0f }, { 255, 0, 0, 127 } },
+    const QColor &xColor = Settings().getEditorColor(EditorColorId::OriginX);
+    const QColor &yColor = Settings().getEditorColor(EditorColorId::OriginY);
+    const QColor &zColor = Settings().getEditorColor(EditorColorId::OriginZ);
 
-        { { 0.0f, 0.0f, 0.0f }, { 0, 255, 0, 127 } },
-        { { 0.0f, 32.0f, 0.0f }, { 0, 255, 0, 127 } },
+    GPUAxisData axisData[] = {
+        { { 0.0f, 0.0f, 0.0f }, xColor },
+        { { 32.0f, 0.0f, 0.0f }, xColor },
 
-        { { 0.0f, 0.0f, 0.0f }, { 0, 0, 255, 127 } },
-        { { 0.0f, 0.0f, 32.0f }, { 0, 0, 255, 127 } },
+        { { 0.0f, 0.0f, 0.0f }, yColor },
+        { { 0.0f, 32.0f, 0.0f }, yColor },
+
+        { { 0.0f, 0.0f, 0.0f }, zColor },
+        { { 0.0f, 0.0f, 32.0f }, zColor },
     };
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(axisData), axisData, GL_STATIC_DRAW);
@@ -199,11 +206,11 @@ void QMDLRenderer::initializeGL()
 
     glGenVertexArrays(1, &_gridVao);
     glBindVertexArray(_gridVao);
-    glEnableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(2);
-    glDisableVertexAttribArray(3);
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(QVector3D), nullptr);
+    glEnableVertexAttribArray(ATTRIB_POSITION);
+    glDisableVertexAttribArray(ATTRIB_TEXCOORD);
+    glDisableVertexAttribArray(ATTRIB_COLOR);
+    glDisableVertexAttribArray(ATTRIB_NORMAL);
+    glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(QVector3D), nullptr);
         
     glGenBuffers(1, &_axisBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _axisBuffer);
@@ -211,12 +218,12 @@ void QMDLRenderer::initializeGL()
 
     glGenVertexArrays(1, &_axisVao);
     glBindVertexArray(_axisVao);
-    glEnableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
-    glEnableVertexAttribArray(2);
-    glDisableVertexAttribArray(3);
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, position)));
-    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, color)));
+    glEnableVertexAttribArray(ATTRIB_POSITION);
+    glDisableVertexAttribArray(ATTRIB_TEXCOORD);
+    glEnableVertexAttribArray(ATTRIB_COLOR);
+    glDisableVertexAttribArray(ATTRIB_NORMAL);
+    glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, position)));
+    glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, color)));
 
     glGenBuffers(1, &_buffer);
     
@@ -227,26 +234,26 @@ void QMDLRenderer::initializeGL()
 
     glGenVertexArrays(1, &_vao);
     glBindVertexArray(_vao);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glEnableVertexAttribArray(3);
-    glDisableVertexAttribArray(2);
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
-    glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
+    glEnableVertexAttribArray(ATTRIB_POSITION);
+    glEnableVertexAttribArray(ATTRIB_TEXCOORD);
+    glDisableVertexAttribArray(ATTRIB_COLOR);
+    glEnableVertexAttribArray(ATTRIB_NORMAL);
+    glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
+    glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
     glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
-    glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, nullptr);
+    glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_FLOAT, false, 0, nullptr);
 
     glGenBuffers(1, &_pointBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _pointBuffer);
 
     glGenVertexArrays(1, &_pointVao);
     glBindVertexArray(_pointVao);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(2);
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(3);
-    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, position)));
-    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, color)));
+    glEnableVertexAttribArray(ATTRIB_POSITION);
+    glDisableVertexAttribArray(ATTRIB_TEXCOORD);
+    glEnableVertexAttribArray(ATTRIB_COLOR);
+    glDisableVertexAttribArray(ATTRIB_NORMAL);
+    glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, position)));
+    glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, color)));
 }
 
 void QMDLRenderer::resizeGL(int w, int h)
@@ -259,8 +266,8 @@ QuadRect QMDLRenderer::getQuadrantRect(QuadrantFocus quadrant)
     int h = height() * devicePixelRatio();
         
     // calculate the top-left quadrant size, which is used as the basis
-    int qw = (w * _horizontalSplit) - 1;
-    int qh = (h * _verticalSplit) - 1;
+    int qw = (w * Settings().getHorizontalSplit()) - 1;
+    int qh = (h * Settings().getVerticalSplit()) - 1;
         
     int line_width = 2 + (w & 1);
     int line_height = 2 + (h & 1);
@@ -356,14 +363,6 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
                 }
         }
     }
-    
-    bool adjust_vert = _focusedQuadrant == QuadrantFocus::Horizontal || _focusedQuadrant == QuadrantFocus::Center;
-    bool adjust_horz = _focusedQuadrant == QuadrantFocus::Vertical || _focusedQuadrant == QuadrantFocus::Center;
-                
-    if (adjust_vert)
-        MainWindow::instance().settings.setValue("HorizontalSplit", _horizontalSplit);
-    if (adjust_horz)
-        MainWindow::instance().settings.setValue("VerticalSplit", _verticalSplit);
 
     _dragging = false;
 
@@ -460,9 +459,9 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
             bool adjust_horz = _focusedQuadrant == QuadrantFocus::Vertical || _focusedQuadrant == QuadrantFocus::Center;
                 
             if (adjust_horz)
-                _horizontalSplit = (float) pos.x() / (width() * devicePixelRatio());
+                Settings().setHorizontalSplit((float) pos.x() / (width() * devicePixelRatio()));
             if (adjust_vert)
-                _verticalSplit = (float) pos.y() / (height() * devicePixelRatio());
+                Settings().setVerticalSplit((float) pos.y() / (height() * devicePixelRatio()));
         }
         else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
         {
@@ -582,8 +581,9 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     {
         glBindVertexArray(_gridVao);
         glBindBuffer(GL_ARRAY_BUFFER, _gridBuffer);
-        glVertexAttrib4f(2, 1.0f, 0.5f, 0.0f, 0.50f);
-        glVertexAttrib2f(1, 1.0f, 1.0f);
+        const QColor &gridColor = Settings().getEditorColor(EditorColorId::Grid);
+        glVertexAttrib2f(ATTRIB_TEXCOORD, 1.0f, 1.0f);
+        glVertexAttrib4f(ATTRIB_COLOR, gridColor.redF(), gridColor.greenF(), gridColor.blueF(), gridColor.alphaF());
         glDrawArrays(GL_LINES, 0, (GLsizei) _gridSize);
     }
     
@@ -606,33 +606,42 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         modelview *= getDragMatrix();
     glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
-    glUniform1i(_modelProgram.shadedUniformLocation, params.shaded);
 
     // model
     glBindVertexArray(_vao);
-    glVertexAttrib4f(2, 1.0f, 1.0f, 1.0f, 1.0f);
+    glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
 
     if (params.smoothNormals)
         glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     else
         glBindBuffer(GL_ARRAY_BUFFER, _flatNormalBuffer);
 
-    glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, nullptr);
+    glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_FLOAT, false, 0, nullptr);
 
     if (!params.drawBackfaces)
         glEnable(GL_CULL_FACE);
 
     if (params.mode == RenderMode::Wireframe)
     {
-        glBindTexture(GL_TEXTURE_2D, _blackTexture);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    }
-    else if (params.mode == RenderMode::Flat)
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
+        const QColor &wireframeColor = Settings().getEditorColor(EditorColorId::FaceLineUnselected3D);
+        glVertexAttrib4f(ATTRIB_COLOR, wireframeColor.redF(), wireframeColor.greenF(), wireframeColor.blueF(), wireframeColor.alphaF());
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glUniform1i(_modelProgram.shadedUniformLocation, false);
+    }
     else
-        glBindTexture(GL_TEXTURE_2D, _modelTexture);
+    {
+        if (params.mode == RenderMode::Flat)
+            glBindTexture(GL_TEXTURE_2D, _whiteTexture);
+        else
+            glBindTexture(GL_TEXTURE_2D, _modelTexture);
+    
+        glUniform1i(_modelProgram.shadedUniformLocation, params.shaded);
+    }
 
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei) _bufferData.size());
+
+    glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
     
     if (MainWindow::instance().vertexTicks())
     {
@@ -836,10 +845,10 @@ GLuint QMDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
 	glAttachShader(program, vertexShader);
 	glAttachShader(program, fragmentShader);
     
-    glBindAttribLocation(program, 0, "i_position");
-    glBindAttribLocation(program, 1, "i_texcoord");
-    glBindAttribLocation(program, 2, "i_color");
-    glBindAttribLocation(program, 3, "i_normal");
+    glBindAttribLocation(program, ATTRIB_POSITION, "i_position");
+    glBindAttribLocation(program, ATTRIB_TEXCOORD, "i_texcoord");
+    glBindAttribLocation(program, ATTRIB_COLOR, "i_color");
+    glBindAttribLocation(program, ATTRIB_NORMAL, "i_normal");
 
 	glLinkProgram(program);
 
@@ -1015,9 +1024,9 @@ void QMDLRenderer::rebuildBuffer()
             ov1.position = positions[1];
             ov2.position = positions[2];
             
-            ov0.color = gv0.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
-            ov1.color = gv1.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
-            ov2.color = gv2.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
+            ov0.color = Settings().getEditorColor(gv0.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+            ov1.color = Settings().getEditorColor(gv1.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+            ov2.color = Settings().getEditorColor(gv2.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
         }
 
         n += 3;

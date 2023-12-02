@@ -2,6 +2,7 @@
 #include "ui_uveditor.h"
 #include "mainwindow.h"
 #include "qmdlrenderer.h"
+#include "qtutils.h"
 
 UVEditor::UVEditor(QWidget *parent) :
     QMainWindow(parent),
@@ -22,11 +23,37 @@ UVEditor::UVEditor(QWidget *parent) :
 
     QObject::connect(this->_ui->toolButton_19, &QToolButton::clicked, this, &UVEditor::nextSkin);
     QObject::connect(this->_ui->toolButton_18, &QToolButton::clicked, this, &UVEditor::prevSkin);
+
+    QtUtils::setupMenuRadioButtons(this, {
+		this->_ui->actionNone, this->_ui->actionSimple
+	}, [this] () { this->_ui->uvDrawArea->update(); });
+
+	QtUtils::setupMenuRadioButtons(this, {
+		this->_ui->actionNone_2, this->_ui->actionPixels, this->_ui->actionSquares
+	}, [this] () { this->_ui->uvDrawArea->update(); });
 }
 
 UVEditor::~UVEditor()
 {
     delete _ui;
+}
+
+LineDisplayMode UVEditor::getLineDisplayMode() const
+{
+    if (this->_ui->actionNone->isChecked())
+        return LineDisplayMode::None;
+    else
+        return LineDisplayMode::Simple;
+}
+
+VertexDisplayMode UVEditor::getVertexDisplayMode() const
+{
+    if (this->_ui->actionNone_2->isChecked())
+        return VertexDisplayMode::None;
+    else if (this->_ui->actionPixels->isChecked())
+        return VertexDisplayMode::Pixels;
+    else
+        return VertexDisplayMode::Squares;
 }
 
 void UVEditor::show()

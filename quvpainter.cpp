@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "quvpainter.h"
 #include <QPainter>
+#include "settings.h"
 
 QUVPainter::QUVPainter(QWidget *parent) :
 	QWidget(parent)
@@ -25,22 +26,33 @@ QUVPainter::QUVPainter(QWidget *parent) :
     
     QVector2D tcScale{(float) skin.width * scale, (float) skin.height * scale};
 
-    painter.setPen(QColorConstants::Gray);
+    painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineUnselected2D));
 
-    for (auto &v : model.triangles)
+    if (MainWindow::instance().uvEditor().getLineDisplayMode() == LineDisplayMode::Simple)
     {
-        auto tc0 = model.texcoords[v.texcoords[0]].pos * tcScale;
-        auto tc1 = model.texcoords[v.texcoords[1]].pos * tcScale;
-        auto tc2 = model.texcoords[v.texcoords[2]].pos * tcScale;
+        for (auto &v : model.triangles)
+        {
+            auto tc0 = model.texcoords[v.texcoords[0]].pos * tcScale;
+            auto tc1 = model.texcoords[v.texcoords[1]].pos * tcScale;
+            auto tc2 = model.texcoords[v.texcoords[2]].pos * tcScale;
         
-        painter.drawLine(tc0.x(), tc0.y(), tc1.x(), tc1.y());
-        painter.drawLine(tc1.x(), tc1.y(), tc2.x(), tc2.y());
-        painter.drawLine(tc2.x(), tc2.y(), tc0.x(), tc0.y());
+            painter.drawLine(tc0.x(), tc0.y(), tc1.x(), tc1.y());
+            painter.drawLine(tc1.x(), tc1.y(), tc2.x(), tc2.y());
+            painter.drawLine(tc2.x(), tc2.y(), tc0.x(), tc0.y());
+        }
     }
 
-    for (auto &tc : model.texcoords)
+    if (MainWindow::instance().uvEditor().getVertexDisplayMode() != VertexDisplayMode::None)
     {
-        QVector2D pos = tc.pos * tcScale;
-        painter.fillRect(pos[0] - 1, pos[1] - 1, 3, 3, QColor(235, 159, 39));
+        for (auto &tc : model.texcoords)
+        {
+            QVector2D pos = tc.pos * tcScale;
+            const QColor &color = Settings().getEditorColor(tc.selected ? EditorColorId::VertexTickSelected2D : EditorColorId::VertexTickUnselected2D); 
+
+            if (MainWindow::instance().uvEditor().getVertexDisplayMode() == VertexDisplayMode::Squares)
+                painter.fillRect(pos[0] - 1, pos[1] - 1, 3, 3, color);
+            else
+                painter.fillRect(pos[0], pos[1], 1, 1, color);
+        }
     }
 }

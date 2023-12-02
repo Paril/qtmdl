@@ -35,6 +35,8 @@ set(PROJECT_SOURCES
         quvpainter.cpp
         quvpainter.h
         qtutils.h
+        settings.cpp
+        settings.h
         ${TS_FILES}
 )
 

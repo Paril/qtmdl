@@ -2,11 +2,11 @@
 #include "./ui_mainwindow.h"
 #include "qtutils.h"
 #include <qopenglcontext.h>
+#include "settings.h"
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
-    _ui(new Ui::MainWindow),
-	settings(QSettings::IniFormat, QSettings::UserScope, "Altered Softworks", "QTMDL")
+    _ui(new Ui::MainWindow)
 {
 	_instance = this;
 
@@ -345,31 +345,31 @@ constexpr QVector3D anorms[] = {
 ========================================================================
 */
 
-#define IDALIASHEADER		(('2'<<24)+('P'<<16)+('D'<<8)+'I')
-#define ALIAS_VERSION	8
+constexpr int32_t IDALIASHEADER = (('2'<<24)+('P'<<16)+('D'<<8)+'I');
+constexpr int32_t ALIAS_VERSION = 8;
 
-#define	MAX_TRIANGLES	4096
-#define MAX_VERTS		2048
-#define MAX_FRAMES		512
-#define MAX_MD2SKINS	32
-#define	MAX_SKINNAME	64
+constexpr size_t MAX_TRIANGLES = 4096;
+constexpr size_t MAX_VERTS = 2048;
+constexpr size_t MAX_FRAMES = 512;
+constexpr size_t MAX_MD2SKINS = 32;
+constexpr size_t MAX_SKINNAME = 64;
 
 struct dstvert_t
 {
-	short	s;
-	short	t;
+	int16_t	s;
+	int16_t	t;
 };
 
 struct dtriangle_t
 {
-	std::array<short, 3> index_xyz;
-	std::array<short, 3> index_st;
+	std::array<int16_t, 3> index_xyz;
+	std::array<int16_t, 3> index_st;
 };
 
 struct dtrivertx_t
 {
-	std::array<byte, 3> v;			// scaled byte to fit in frame mins/maxs
-	byte	            lightnormalindex;
+	std::array<uint8_t, 3> v;			// scaled byte to fit in frame mins/maxs
+	uint8_t				   lightnormalindex;
 };
 
 struct daliasframe_t
@@ -377,47 +377,46 @@ struct daliasframe_t
 	std::array<float, 3> scale;	// multiply byte verts by this
 	std::array<float, 3> translate;	// then add this
 	char		         name[16];	// frame name from grabbing
-	//dtrivertx_t	verts[1];	// variable sized
 };
 
 struct dmdl_t
 {
-	int			ident;
-	int			version;
+	int32_t	ident;
+	int32_t	version;
 
-	int			skinwidth;
-	int			skinheight;
-	int			framesize;		// byte size of each frame
+	int32_t	skinwidth;
+	int32_t	skinheight;
+	int32_t	framesize;		// byte size of each frame
 
-	int			num_skins;
-	int			num_xyz;
-	int			num_st;			// greater than num_xyz for seams
-	int			num_tris;
-	int			num_glcmds;		// dwords in strip/fan command list
-	int			num_frames;
+	int32_t	num_skins;
+	int32_t	num_xyz;
+	int32_t	num_st;			// greater than num_xyz for seams
+	int32_t	num_tris;
+	int32_t	num_glcmds;		// dwords in strip/fan command list
+	int32_t	num_frames;
 
-	int			ofs_skins;		// each skin is a MAX_SKINNAME string
-	int			ofs_st;			// byte offset from start for stverts
-	int			ofs_tris;		// offset for dtriangles
-	int			ofs_frames;		// offset for first frame
-	int			ofs_glcmds;	
-	int			ofs_end;		// end of file
+	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
+	int32_t	ofs_st;			// byte offset from start for stverts
+	int32_t	ofs_tris;		// offset for dtriangles
+	int32_t	ofs_frames;		// offset for first frame
+	int32_t	ofs_glcmds;	
+	int32_t	ofs_end;		// end of file
 };
 
 struct pcx_t
 {
-    char    manufacturer;
-    char    version;
-    char    encoding;
-    char    bits_per_pixel;
-    unsigned short  xmin,ymin,xmax,ymax;
-    unsigned short  hres,vres;
-    unsigned char   palette[48];
-    char    reserved;
-    char    color_planes;
-    unsigned short  bytes_per_line;
-    unsigned short  palette_type;
-    char    filler[58];
+    int8_t   manufacturer;
+    int8_t   version;
+    int8_t   encoding;
+    int8_t   bits_per_pixel;
+    uint16_t xmin,ymin,xmax,ymax;
+    uint16_t hres,vres;
+    uint8_t  palette[48];
+    int8_t   reserved;
+    int8_t   color_planes;
+    uint16_t bytes_per_line;
+    uint16_t palette_type;
+    int8_t   filler[58];
 };
 
 /*
@@ -625,6 +624,7 @@ void MainWindow::loadModel(QString path)
 	this->_uveditor.modelLoaded();
 	this->_ui->openGLWidget->modelLoaded();
 	frameCountChanged();
+	Settings().setModelDialogLocation(QFileInfo(path).dir().path());
 }
 
 void MainWindow::clearModel()
@@ -645,7 +645,7 @@ void MainWindow::openClicked()
 {
 	// TODO: are you sure?
 
-    QFileDialog dlg(this, "Load MD2", "", "*.md2");
+    QFileDialog dlg(this, "Load MD2", Settings().getModelDialogLocation(), "*.md2");
     if (dlg.exec() == QFileDialog::Accepted)
 		loadModel(dlg.selectedFiles()[0]);
 }
