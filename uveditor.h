@@ -3,10 +3,13 @@
 
 #include <QMainWindow>
 #include <optional>
+#include "editortypes.h"
 
 namespace Ui {
 class UVEditor;
 }
+
+class QUVPainter;
 
 enum class LineDisplayMode
 {
@@ -21,6 +24,14 @@ enum class VertexDisplayMode
     Squares
 };
 
+enum class UVEditorTool
+{
+    Select,
+    Move,
+    Rotate,
+    Scale
+};
+
 class UVEditor : public QMainWindow
 {
     Q_OBJECT
@@ -33,9 +44,20 @@ public:
     constexpr int getZoom() const { return _zoom; }
     LineDisplayMode getLineDisplayMode() const;
     VertexDisplayMode getVertexDisplayMode() const;
+    UVEditorTool selectedTool() const;
+    UVSelectMode getSelectMode() const;
+    QUVPainter &getPainter();
+    bool getModifyX() const;
+    bool getModifyY() const;
 
     void resetZoom();
     void modelLoaded();
+    
+    void selectAll();
+    void selectNone();
+    void selectInverse();
+    void selectConnected();
+    void selectTouching();
 
 private:
     void zoomIn();

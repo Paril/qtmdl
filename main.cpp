@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     w.show();
 
     if (argc >= 2)
-        w.loadModel(argv[1]);
+        w.loadModel(QFileInfo(argv[1]));
 
     return a.exec();
 }

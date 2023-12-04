@@ -122,6 +122,9 @@
                   <property name="checkable">
                    <bool>true</bool>
                   </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
                  </widget>
                 </item>
                 <item>
@@ -230,6 +233,9 @@
                      <property name="checkable">
                       <bool>true</bool>
                      </property>
+                     <property name="checked">
+                      <bool>true</bool>
+                     </property>
                      <property name="popupMode">
                       <enum>QToolButton::DelayedPopup</enum>
                      </property>
@@ -253,6 +259,9 @@
                       <string>Y</string>
                      </property>
                      <property name="checkable">
+                      <bool>true</bool>
+                     </property>
+                     <property name="checked">
                       <bool>true</bool>
                      </property>
                      <property name="popupMode">
@@ -620,6 +629,9 @@
          <property name="checkable">
           <bool>true</bool>
          </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
         </widget>
        </item>
        <item>
@@ -744,11 +756,17 @@
    </property>
   </action>
   <action name="actionUndo">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Undo</string>
    </property>
   </action>
   <action name="actionRedo">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Redo</string>
    </property>

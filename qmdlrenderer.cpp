@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include "settings.h"
+#include "qtutils.h"
+#include "quvpainter.h"
 
 constexpr GLuint ATTRIB_POSITION = 0;
 constexpr GLuint ATTRIB_TEXCOORD = 1;
@@ -353,7 +355,7 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
 
         if (!drag.isIdentity())
         {
-            MainWindow::instance().undoRedo.push(activeModel());
+            MainWindow::instance().undoRedo().push(activeModel());
 
             for (auto &frame : activeModel().frames)
                 for (auto &vert : frame.vertices)
@@ -367,18 +369,7 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
     _dragging = false;
 
     mouseMoveEvent(e);
-    update();
-}
-
-template<typename T>
-constexpr T Wrap(T v, T min, T max)
-{
-    T range = max - min + 1;
-
-    if (v < min)
-        v += range * ((min - v) / range + 1);
-
-    return min + (v - min) % range;
+    MainWindow::instance().updateRenders();
 }
 
 QMatrix4x4 QMDLRenderer::getDragMatrix()
@@ -403,7 +394,9 @@ QMatrix4x4 QMDLRenderer::getDragMatrix()
     else if (MainWindow::instance().selectedTool() == EditorTool::Scale)
     {
         float s = 1.0f + (_dragDelta.y() * 0.01f) / _2dZoom;
+        matrix.translate(_dragWorldPos);
         matrix.scale(s, s, s);
+        matrix.translate(-_dragWorldPos);
     }
     else if (MainWindow::instance().selectedTool() == EditorTool::Rotate)
     {
@@ -495,11 +488,11 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
         update();
         
         if (MainWindow::instance().selectedTool() == EditorTool::Pan)
-            _dragPos = { Wrap(pos.x(), 0, static_cast<int>(width() * devicePixelRatio()) - 1), Wrap(pos.y(), 0, static_cast<int>(height() * devicePixelRatio()) - 1) };
+            _dragPos = { QtUtils::wrap(pos.x(), 0, static_cast<int>(width() * devicePixelRatio()) - 1), QtUtils::wrap(pos.y(), 0, static_cast<int>(height() * devicePixelRatio()) - 1) };
         else if (_focusedQuadrant != QuadrantFocus::None)
         {
             QuadRect rect = getQuadrantRect(_focusedQuadrant);
-            _dragPos = { Wrap(pos.x(), rect.x, rect.x + rect.w - 1), Wrap(pos.y(), rect.y, rect.y + rect.h - 1) };
+            _dragPos = { QtUtils::wrap(pos.x(), rect.x, rect.x + rect.w - 1), QtUtils::wrap(pos.y(), rect.y, rect.y + rect.h - 1) };
         }
 
         if (_dragPos != pos)
@@ -604,8 +597,8 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     if (_dragging && (_focusedQuadrant == QuadrantFocus::TopLeft || _focusedQuadrant == QuadrantFocus::TopRight ||
         _focusedQuadrant == QuadrantFocus::BottomLeft || _focusedQuadrant == QuadrantFocus::BottomRight))
         modelview *= getDragMatrix();
-    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
+    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     // model
     glBindVertexArray(_vao);
@@ -754,6 +747,8 @@ QVector3D QMDLRenderer::mouseToWorld(QPoint pos)
 
     if (_focusedQuadrant == QuadrantFocus::TopRight)
         position.setZ(1.0f);
+    else
+        position.setZ(0.5f);
 
     return position.unproject(modelview, projection, { 0, 0, r.w, r.h });
 }
@@ -786,25 +781,27 @@ void QMDLRenderer::paintGL()
             std::abs(_dragPos.y() - _downPos.y())
         };
 
+        const QColor &selectBox = Settings().getEditorColor(EditorColorId::SelectBox);
+
         clearQuadrant({
             selectRect.x, selectRect.y,
             selectRect.w, 1
-        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+        }, { selectBox.redF(), selectBox.greenF(), selectBox.blueF(), selectBox.alphaF() });
 
         clearQuadrant({
             selectRect.x, selectRect.y + selectRect.h,
             selectRect.w, 1
-        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+        }, { selectBox.redF(), selectBox.greenF(), selectBox.blueF(), selectBox.alphaF() });
 
         clearQuadrant({
             selectRect.x, selectRect.y,
             1, selectRect.h
-        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+        }, { selectBox.redF(), selectBox.greenF(), selectBox.blueF(), selectBox.alphaF() });
 
         clearQuadrant({
             selectRect.x + selectRect.w, selectRect.y,
             1, selectRect.h
-        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+        }, { selectBox.redF(), selectBox.greenF(), selectBox.blueF(), selectBox.alphaF() });
     }
         
 #ifdef RENDERDOC_SUPPORT
@@ -910,6 +907,18 @@ void QMDLRenderer::rebuildBuffer()
         }
     }
 
+    auto &painter = MainWindow::instance().uvEditor().getPainter();
+    Matrix4 uvMatrix = painter.getDragMatrix();
+    const ModelSkin *skin = model.getSelectedSkin();
+    QVector2D tcScale;
+
+    if (skin)
+    {
+        auto &uvEditor = MainWindow::instance().uvEditor();
+        int scale = uvEditor.getZoom();
+        tcScale = QVector2D{(float) skin->width * scale, (float) skin->height * scale};
+    }
+
     for (auto &tri : model.triangles)
     {
         auto &from = model.frames[cur_frame];
@@ -1010,9 +1019,18 @@ void QMDLRenderer::rebuildBuffer()
             _flatNormalData[n + 1] =
             _flatNormalData[n + 2] = (nv0 + nv1 + nv2) / 3;
             
-            ov0.texcoord = st0.pos;
-            ov1.texcoord = st1.pos;
-            ov2.texcoord = st2.pos;
+            if (!uvMatrix.isIdentity())
+            {
+                ov0.texcoord = uvMatrix.map((st0.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                ov1.texcoord = uvMatrix.map((st1.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                ov2.texcoord = uvMatrix.map((st2.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+            }
+            else
+            {
+                ov0.texcoord = st0.pos;
+                ov1.texcoord = st1.pos;
+                ov2.texcoord = st2.pos;
+            }
         }
 
         {
@@ -1046,7 +1064,7 @@ ModelData &QMDLRenderer::activeModel()
 void QMDLRenderer::selectedSkinChanged()
 {
     makeCurrent();
-    update();
+    MainWindow::instance().updateRenders();
 
     glBindTexture(GL_TEXTURE_2D, _modelTexture);
 
@@ -1068,7 +1086,6 @@ void QMDLRenderer::selectedSkinChanged()
 void QMDLRenderer::modelLoaded()
 {
     selectedSkinChanged();
-	this->update();
 }
 
 void QMDLRenderer::captureRenderDoc(bool)

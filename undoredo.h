@@ -3,15 +3,20 @@
 #include <optional>
 #include <vector>
 #include "modeldata.h"
+#include <QObject>
 
-class UndoRedo
+class UndoRedo : public QObject
 {
+    Q_OBJECT
+
 	// current undo position. if nullopt
 	// we're not undone anywhere.
 	std::optional<size_t>		_position = std::nullopt;
 	std::vector<ModelData>	    _models = {};
 
 public:
+	inline UndoRedo(QObject *parent = nullptr) : QObject(parent) { }
+
 	inline bool canRedo() { return _models.size() && _position; }
 	inline bool canUndo() { return _models.size() != 0 && (!_position || _position != 0); }
 
@@ -26,6 +31,8 @@ public:
 		}
 
 		_models.push_back(data);
+
+		emit undoRedoStateChanged();
 	}
 
 	inline void undo(ModelData &current)
@@ -45,6 +52,8 @@ public:
 			_position.value()--;
 
 		current = _models[_position.value()];
+
+		emit undoRedoStateChanged();
 	}
 
 	inline void redo(ModelData &current)
@@ -62,11 +71,16 @@ public:
 			_position = std::nullopt;
 			_models.pop_back();
 		}
+
+		emit undoRedoStateChanged();
 	}
 
 	inline void clear()
 	{
-		*this = {};
+		_position.reset();
+		_models.clear();
+
+		emit undoRedoStateChanged();
 	}
 
 	inline size_t byteSize()
@@ -77,4 +91,7 @@ public:
 
 		return b;
 	}
+
+signals:
+    void undoRedoStateChanged();
 };

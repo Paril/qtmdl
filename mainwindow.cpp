@@ -3,14 +3,19 @@
 #include "qtutils.h"
 #include <qopenglcontext.h>
 #include "settings.h"
+#include "quvpainter.h"
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
-    _ui(new Ui::MainWindow)
+    _ui(new Ui::MainWindow),
+	_undoRedo(new UndoRedo(this))
 {
 	_instance = this;
 
     _ui->setupUi(this);
+
+	_uveditor = new UVEditor();
 	
     QObject::connect(this->_ui->actionNew, &QAction::triggered, this, &MainWindow::newClicked);
     QObject::connect(this->_ui->actionOpen, &QAction::triggered, this, &MainWindow::openClicked);
@@ -26,7 +31,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
 	QtUtils::setupMenuRadioButtons(this, {
 		this->_ui->actionWireframe, this->_ui->actionFlat, this->_ui->actionTextured
-	}, [this] () { this->_ui->openGLWidget->update(); });
+	}, [this] () { this->updateRenders(); });
 	
 	QObject::connect(this->_ui->actionDraw_Backfaces, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->_ui->actionPer_Vertex_Normals, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
@@ -34,7 +39,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
 	QtUtils::setupMenuRadioButtons(this, {
 		this->_ui->actionWireframe_2, this->_ui->actionFlat_2, this->_ui->actionTextured_2
-	}, [this] () { this->_ui->openGLWidget->update(); });
+	}, [this] () { this->updateRenders(); });
 	
 	QObject::connect(this->_ui->actionDraw_Backfaces_2, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->_ui->actionPer_Vertex_Normals_2, &QAction::toggled, this->_ui->openGLWidget, qOverload<>(&QWidget::update));
@@ -49,21 +54,29 @@ MainWindow::MainWindow(QWidget *parent) :
 	QtUtils::setupGroupedButtons(this, {
 		this->_ui->toolButton_7, this->_ui->toolButton_8, this->_ui->toolButton_9,
 		this->_ui->toolButton_10, this->_ui->toolButton_6, this->_ui->toolButton_20, this->_ui->toolButton_21
-	}, [this] () { });
+	});
 
 	QObject::connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] (Qt::ApplicationState state) {
 		if (state != Qt::ApplicationState::ApplicationActive)
+		{
 			this->_ui->openGLWidget->focusLost();
+			this->uvEditor().getPainter().focusLost();
+		}
 	});
 	
-	QObject::connect(this->_ui->actionUndo, &QAction::triggered, [this] () { this->undoRedo.undo(this->_activeModel); this->_ui->openGLWidget->update(); });
-	QObject::connect(this->_ui->actionRedo, &QAction::triggered, [this] () { this->undoRedo.redo(this->_activeModel); this->_ui->openGLWidget->update(); });
-
 	QObject::connect(this->_ui->actionSkins, &QAction::triggered, [this] () {
-		if (this->_uveditor.isVisible())
-			this->_uveditor.activateWindow();
+		if (this->_uveditor->isVisible())
+			this->_uveditor->activateWindow();
 		else
-			this->_uveditor.show();
+			this->_uveditor->show();
+	});
+	
+	QObject::connect(this->_ui->actionUndo, &QAction::triggered, [this] () { this->undoRedo().undo(this->_activeModel); this->updateRenders(); });
+	QObject::connect(this->_ui->actionRedo, &QAction::triggered, [this] () { this->undoRedo().redo(this->_activeModel); this->updateRenders(); });
+
+	QObject::connect(_undoRedo, &UndoRedo::undoRedoStateChanged, [this] () {
+		this->_ui->actionUndo->setEnabled(this->undoRedo().canUndo());
+		this->_ui->actionRedo->setEnabled(this->undoRedo().canRedo());
 	});
 }
 
@@ -338,71 +351,10 @@ constexpr QVector3D anorms[] = {
 };
 
 /*
-========================================================================
-
-.MD2 triangle model file format
-
-========================================================================
+==============
+LoadPCX
+==============
 */
-
-constexpr int32_t IDALIASHEADER = (('2'<<24)+('P'<<16)+('D'<<8)+'I');
-constexpr int32_t ALIAS_VERSION = 8;
-
-constexpr size_t MAX_TRIANGLES = 4096;
-constexpr size_t MAX_VERTS = 2048;
-constexpr size_t MAX_FRAMES = 512;
-constexpr size_t MAX_MD2SKINS = 32;
-constexpr size_t MAX_SKINNAME = 64;
-
-struct dstvert_t
-{
-	int16_t	s;
-	int16_t	t;
-};
-
-struct dtriangle_t
-{
-	std::array<int16_t, 3> index_xyz;
-	std::array<int16_t, 3> index_st;
-};
-
-struct dtrivertx_t
-{
-	std::array<uint8_t, 3> v;			// scaled byte to fit in frame mins/maxs
-	uint8_t				   lightnormalindex;
-};
-
-struct daliasframe_t
-{
-	std::array<float, 3> scale;	// multiply byte verts by this
-	std::array<float, 3> translate;	// then add this
-	char		         name[16];	// frame name from grabbing
-};
-
-struct dmdl_t
-{
-	int32_t	ident;
-	int32_t	version;
-
-	int32_t	skinwidth;
-	int32_t	skinheight;
-	int32_t	framesize;		// byte size of each frame
-
-	int32_t	num_skins;
-	int32_t	num_xyz;
-	int32_t	num_st;			// greater than num_xyz for seams
-	int32_t	num_tris;
-	int32_t	num_glcmds;		// dwords in strip/fan command list
-	int32_t	num_frames;
-
-	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
-	int32_t	ofs_st;			// byte offset from start for stverts
-	int32_t	ofs_tris;		// offset for dtriangles
-	int32_t	ofs_frames;		// offset for first frame
-	int32_t	ofs_glcmds;	
-	int32_t	ofs_end;		// end of file
-};
-
 struct pcx_t
 {
     int8_t   manufacturer;
@@ -419,11 +371,6 @@ struct pcx_t
     int8_t   filler[58];
 };
 
-/*
-==============
-LoadPCX
-==============
-*/
 bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 {
     pcx_t   pcx;
@@ -496,6 +443,69 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 
 	return true;
 }
+
+
+/*
+========================================================================
+
+.MD2 triangle model file format
+
+========================================================================
+*/
+constexpr int32_t MD2_MAGIC = (('2'<<24)+('P'<<16)+('D'<<8)+'I');
+constexpr int32_t MD2_VERSION = 8;
+
+constexpr size_t MD2_MAX_SKINNAME = 64;
+constexpr size_t MD2_MAX_FRAMENAME = 16;
+
+struct dstvert_t
+{
+	int16_t	s;
+	int16_t	t;
+};
+
+struct dtriangle_t
+{
+	std::array<int16_t, 3> index_xyz;
+	std::array<int16_t, 3> index_st;
+};
+
+struct dtrivertx_t
+{
+	std::array<uint8_t, 3> v;			// scaled byte to fit in frame mins/maxs
+	uint8_t				   lightnormalindex;
+};
+
+struct daliasframe_t
+{
+	std::array<float, 3> scale;	// multiply byte verts by this
+	std::array<float, 3> translate;	// then add this
+	char		         name[MD2_MAX_FRAMENAME];	// frame name from grabbing
+};
+
+struct dmdl_t
+{
+	int32_t	ident;
+	int32_t	version;
+
+	int32_t	skinwidth;
+	int32_t	skinheight;
+	int32_t	framesize;		// byte size of each frame
+
+	int32_t	num_skins;
+	int32_t	num_xyz;
+	int32_t	num_st;			// greater than num_xyz for seams
+	int32_t	num_tris;
+	int32_t	num_glcmds;		// dwords in strip/fan command list
+	int32_t	num_frames;
+
+	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
+	int32_t	ofs_st;			// byte offset from start for stverts
+	int32_t	ofs_tris;		// offset for dtriangles
+	int32_t	ofs_frames;		// offset for first frame
+	int32_t	ofs_glcmds;	
+	int32_t	ofs_end;		// end of file
+};
 
 ModelData LoadMD2(QString filename)
 {
@@ -582,7 +592,7 @@ ModelData LoadMD2(QString filename)
 
 	for (auto &skin : data.skins)
 	{
-		char skin_path[64];
+		char skin_path[MD2_MAX_SKINNAME];
 		stream.readRawData(skin_path, sizeof(skin_path));
 		skin_path[sizeof(skin_path) - 1] = '\0';
 
@@ -618,21 +628,225 @@ ModelData LoadMD2(QString filename)
 	return data;
 }
 
-void MainWindow::loadModel(QString path)
+
+/*
+========================================================================
+
+.MD2F triangle model file format
+
+========================================================================
+*/
+constexpr int32_t MD2F_VERSION = 9;
+
+struct dtrivertxf_t
 {
-    _activeModel = LoadMD2(path);
-	this->_uveditor.modelLoaded();
+	QVector3D	position;
+	QVector3D	normal;
+};
+
+struct daliasframef_t
+{
+	char		         name[MD2_MAX_FRAMENAME];	// frame name from grabbing
+};
+
+struct dmd2f_t
+{
+	int32_t	ident;
+	int32_t	version;
+
+	int32_t	skinwidth;
+	int32_t	skinheight;
+	int32_t	framesize;		// byte size of each frame
+
+	int32_t	num_skins;
+	int32_t	num_xyz;
+	int32_t	num_st;			// greater than num_xyz for seams
+	int32_t	num_tris;
+	int32_t	num_frames;
+
+	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
+	int32_t	ofs_st;			// byte offset from start for stverts
+	int32_t	ofs_tris;		// offset for dtriangles
+	int32_t	ofs_frames;		// offset for first frame
+	int32_t	ofs_end;		// end of file
+};
+
+ModelData LoadMD2F(QString filename)
+{
+    QFile file(filename);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+        throw std::runtime_error("bad");
+
+    QDataStream stream(&file);
+    stream.setByteOrder(QDataStream::LittleEndian);
+	stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+
+	dmd2f_t header;
+	stream.readRawData(reinterpret_cast<char *>(&header), sizeof(header));
+
+	ModelData data;
+
+	data.frames.resize(header.num_frames);
+
+	for (auto &frame : data.frames)
+		frame.vertices.resize(header.num_xyz);
+
+	data.vertices.resize(header.num_xyz);
+
+	file.seek(header.ofs_frames);
+
+	for (auto &frame : data.frames)
+	{
+		qint64 pos = file.pos();
+		daliasframef_t frame_header;
+		stream.readRawData(frame_header.name, sizeof(frame_header.name));
+		frame_header.name[sizeof(frame_header.name) - 1] = '\0';
+
+		frame.name = frame_header.name;
+
+		for (auto &vert : frame.vertices)
+		{
+			dtrivertxf_t v;
+			stream >> v.position[0] >> v.position[1] >> v.position[2];
+			stream >> v.normal[0] >> v.normal[1] >> v.normal[2];
+
+			vert.position = v.position;
+			vert.normal = v.normal;
+		}
+	}
+
+	file.seek(header.ofs_st);
+	data.texcoords.resize(header.num_st);
+
+	for (auto &st : data.texcoords)
+	{
+		dstvert_t v;
+		stream >> v.s >> v.t;
+		st.pos = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
+	}
+
+	file.seek(header.ofs_tris);
+	data.triangles.resize(header.num_tris);
+
+	for (auto &tri : data.triangles)
+	{
+		dtriangle_t t;
+		stream >> t.index_xyz[0] >> t.index_xyz[1] >> t.index_xyz[2];
+		stream >> t.index_st[0] >> t.index_st[1] >> t.index_st[2];
+		
+		std::copy(t.index_xyz.begin(), t.index_xyz.end(), tri.vertices.begin());
+		std::copy(t.index_st.begin(), t.index_st.end(), tri.texcoords.begin());
+	}
+
+	data.skins.resize(header.num_skins);
+	
+	file.seek(header.ofs_skins);
+
+	QDir model_dir = QFileInfo(filename).dir();
+	QString model_file = model_dir.absolutePath();
+
+	for (auto &skin : data.skins)
+	{
+		char skin_path[MD2_MAX_SKINNAME];
+		stream.readRawData(skin_path, sizeof(skin_path));
+		skin_path[sizeof(skin_path) - 1] = '\0';
+
+		// try to find the matching PCX file
+		QDir skin_dir = model_dir;
+		QFileInfo skin_file;
+
+		while (!skin_dir.isRoot())
+		{
+			skin_file = QFileInfo(skin_dir.filePath(skin_path));
+
+			if (skin_file.exists())
+				break;
+
+			skin_dir.cdUp();
+		}
+
+		if (!skin_file.exists())
+			continue;
+
+		QFile sf = QFile(skin_file.filePath());
+
+		if (!sf.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+			continue;
+		
+		QDataStream skinStream(&sf);
+		skinStream.setByteOrder(QDataStream::LittleEndian);
+		skinStream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+
+		LoadPCX(skinStream, skin);
+	}
+
+	return data;
+}
+
+enum class FileType
+{
+	QuakeMDL,
+	MD2,
+	MD2F,
+	MD3,
+	Unknown
+};
+
+FileType determineModelFormat(QFileInfo filename)
+{
+	QString suffix = filename.completeSuffix();
+	
+	if (suffix.compare("md2", Qt::CaseInsensitive) == 0)
+		return FileType::MD2;
+	else if (suffix.compare("md2f", Qt::CaseInsensitive) == 0)
+		return FileType::MD2F;
+	else if (suffix.compare("mdl", Qt::CaseInsensitive) == 0)
+		return FileType::QuakeMDL;
+
+	return FileType::Unknown;
+}
+
+void MainWindow::loadModel(QFileInfo path)
+{
+	FileType type = determineModelFormat(path);
+
+	if (type == FileType::MD2)
+	    _activeModel = LoadMD2(path.filePath());
+	else if (type == FileType::MD2F)
+	    _activeModel = LoadMD2F(path.filePath());
+	else
+	{
+		QMessageBox::warning(this, tr("QTMDL"), tr("Unknown file type."));
+		return;
+	}
+	this->_uveditor->modelLoaded();
 	this->_ui->openGLWidget->modelLoaded();
+	this->updateRenders();
 	frameCountChanged();
-	Settings().setModelDialogLocation(QFileInfo(path).dir().path());
+	Settings().setModelDialogLocation(path.dir().path());
 }
 
 void MainWindow::clearModel()
 {
 	_activeModel = {};
-	this->_uveditor.modelLoaded();
+	this->_uveditor->modelLoaded();
 	this->_ui->openGLWidget->modelLoaded();
+	this->updateRenders();
 	frameCountChanged();
+}
+
+void MainWindow::updateRenders()
+{
+	this->_ui->openGLWidget->update();
+
+	if (_uveditor->isVisible())
+		_uveditor->getPainter().update();
+}
+
+/*virtual*/ void MainWindow::closeEvent(QCloseEvent *event) /*override*/
+{
+	delete _uveditor;
 }
 
 void MainWindow::newClicked()
@@ -644,10 +858,16 @@ void MainWindow::newClicked()
 void MainWindow::openClicked()
 {
 	// TODO: are you sure?
+	// TODO: in future, use MIME database
+	static const QStringList filters({
+		"Supported files (*.md3 *.md2 *.md2f *.mdl)",
+		//"All files (*)"
+	});
 
-    QFileDialog dlg(this, "Load MD2", Settings().getModelDialogLocation(), "*.md2");
+    QFileDialog dlg(this, "Load MD2", Settings().getModelDialogLocation());
+	dlg.setNameFilters(filters);
     if (dlg.exec() == QFileDialog::Accepted)
-		loadModel(dlg.selectedFiles()[0]);
+		loadModel(QFileInfo(dlg.selectedFiles()[0]));
 }
 
 void MainWindow::frameCountChanged()
@@ -665,7 +885,7 @@ void MainWindow::frameChanged()
 {
 	_activeModel.selectedFrame = this->_ui->horizontalSlider->value();
 
-	this->_ui->openGLWidget->update();
+	updateRenders();
 
 	this->_ui->label_5->setText(QString::asprintf("%i", _activeModel.selectedFrame));
 

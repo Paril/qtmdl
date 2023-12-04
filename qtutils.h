@@ -33,4 +33,23 @@ namespace QtUtils
 			groupTool->addButton(button);
 		}
 	}
+
+	static void setupGroupedButtons(QObject *owner, std::initializer_list<QAbstractButton *> buttons)
+	{
+		auto groupTool = new QButtonGroup(owner);
+
+		for (auto &button : buttons)
+			groupTool->addButton(button);
+	}
+
+	template<typename T>
+	constexpr T wrap(T v, T min, T max)
+	{
+		T range = max - min + 1;
+
+		if (v < min)
+			v += range * ((min - v) / range + 1);
+
+		return min + (v - min) % range;
+	}
 };

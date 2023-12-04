@@ -25,6 +25,7 @@ enum class EditorColorId
 	OriginX,
 	OriginY,
 	OriginZ,
+	SelectBox,
 
 	Total
 };
@@ -47,7 +48,8 @@ static constexpr const char *EditorColorNames[] = {
 	"ColorGrid",
 	"ColorOriginX",
 	"ColorOriginY",
-	"ColorOriginZ"
+	"ColorOriginZ",
+	"SelectBox",
 };
 
 static constexpr std::array<QColor, std::size(EditorColorNames)> EditorColorDefaults = {
@@ -55,8 +57,8 @@ static constexpr std::array<QColor, std::size(EditorColorNames)> EditorColorDefa
 	QColor(255, 235, 31),
 	QColor(123, 123, 123),
 	QColor(255, 235, 31),
-	QColor(0, 0, 0, 0),
-	QColor(255, 171, 7),
+	QColor(255, 255, 255, 31),
+	QColor(255, 171, 7, 63),
 
 	QColor(235, 159, 39),
 	QColor(255, 235, 31),
@@ -69,6 +71,7 @@ static constexpr std::array<QColor, std::size(EditorColorNames)> EditorColorDefa
 	QColor(255, 0, 0, 127),
 	QColor(0, 255, 0, 127),
 	QColor(0, 0, 255, 127),
+	QColor(115, 151, 167),
 };
 
 static_assert(std::size(EditorColorNames) == ((size_t) EditorColorId::Total), "need to match color names");

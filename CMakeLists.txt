@@ -37,6 +37,7 @@ set(PROJECT_SOURCES
         qtutils.h
         settings.cpp
         settings.h
+        editortypes.h
         ${TS_FILES}
 )
 
