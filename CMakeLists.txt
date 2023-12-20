@@ -31,13 +31,17 @@ set(PROJECT_SOURCES
         glad.c
         glad.h
         khrplatform.h
-        undoredo.h
         quvpainter.cpp
         quvpainter.h
         qtutils.h
         settings.cpp
         settings.h
         editortypes.h
+        modelloader.cpp
+        modelloader.h
+        uveditor.h
+        uveditor.cpp
+        uveditor.ui
         ${TS_FILES}
 )
 
@@ -45,7 +49,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(qtmdl
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-        uveditor.h uveditor.cpp uveditor.ui
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qtmdl APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -72,11 +75,15 @@ endif()
 target_link_libraries(qtmdl PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::OpenGL Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
 
 file(GLOB_RECURSE SHADER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/res/shaders/*")
+file(GLOB_RECURSE MINE_SOURCE_FILES "${CMAKE_SOURCE_DIR}/mime/packages/*")
 
 add_custom_command(
-        TARGET qtmdl POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/res/shaders
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/res/shaders
+    TARGET qtmdl POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/res/shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/res/shaders
+
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/mime/packages
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MINE_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/mime/packages
 )
 
 if (WIN32)

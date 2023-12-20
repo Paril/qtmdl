@@ -64,7 +64,7 @@ static constexpr std::array<QColor, std::size(EditorColorNames)> EditorColorDefa
 	QColor(255, 235, 31),
 	QColor(0, 0, 0),
 	QColor(255, 235, 31),
-	QColor(0, 0, 0, 0),
+	QColor(255, 255, 255, 255),
 	QColor(255, 171, 7),
 
 	QColor(235, 211, 199),

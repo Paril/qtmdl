@@ -47,7 +47,13 @@ UVEditor::UVEditor(QWidget *parent) :
     QObject::connect(this->_ui->actionSelect_Inverse, &QAction::triggered, this, &UVEditor::selectInverse);
     QObject::connect(this->_ui->actionSelect_Connected, &QAction::triggered, this, &UVEditor::selectConnected);
     QObject::connect(this->_ui->actionSelect_Touching, &QAction::triggered, this, &UVEditor::selectTouching);
-    
+
+	QObject::connect(this->_ui->actionSync_3D_Selection, &QAction::toggled, [this] (bool value) {
+        MainWindow::instance().setSyncSelection(value);
+        MainWindow::instance().updateRenders();
+    });
+
+#if 0
 	QObject::connect(this->_ui->actionUndo, &QAction::triggered, [this] () { MainWindow::instance().undoRedo().undo(MainWindow::instance().activeModel()); MainWindow::instance().updateRenders(); });
 	QObject::connect(this->_ui->actionRedo, &QAction::triggered, [this] () { MainWindow::instance().undoRedo().redo(MainWindow::instance().activeModel()); MainWindow::instance().updateRenders(); });
 
@@ -55,6 +61,7 @@ UVEditor::UVEditor(QWidget *parent) :
 		this->_ui->actionUndo->setEnabled(MainWindow::instance().undoRedo().canUndo());
 		this->_ui->actionRedo->setEnabled(MainWindow::instance().undoRedo().canRedo());
 	});
+#endif
 }
 
 UVEditor::~UVEditor()
@@ -64,46 +71,59 @@ UVEditor::~UVEditor()
 
 void UVEditor::selectAll()
 {
-    auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        for (auto &v : model.texcoords)
-            v.selected = true;
+        mutator.selectAllVerticesUV();
     else
-        for (auto &t : model.triangles)
-            t.selectedUV = true;
+        mutator.selectAllTrianglesUV();
+
+    if (getSyncSelection())
+    {
+        mutator.syncSelectionUV();
+        MainWindow::instance().updateRenders();
+    }
 
     this->_ui->uvDrawArea->update();
 }
 
 void UVEditor::selectNone()
 {
-    auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        for (auto &v : model.texcoords)
-            v.selected = false;
+        mutator.selectNoneVerticesUV();
     else
-        for (auto &t : model.triangles)
-            t.selectedUV = false;
+        mutator.selectNoneTrianglesUV();
+
+    if (getSyncSelection())
+    {
+        mutator.syncSelectionUV();
+        MainWindow::instance().updateRenders();
+    }
 
     this->_ui->uvDrawArea->update();
 }
 
 void UVEditor::selectInverse()
 {
-    auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        for (auto &v : model.texcoords)
-            v.selected = !v.selected;
+        mutator.selectInverseVerticesUV();
     else
-        for (auto &t : model.triangles)
-            t.selectedUV = !t.selectedUV;
+        mutator.selectInverseTrianglesUV();
+
+    if (getSyncSelection())
+    {
+        mutator.syncSelectionUV();
+        MainWindow::instance().updateRenders();
+    }
 
     this->_ui->uvDrawArea->update();
 }
 
+// FIXME: optimize
 static size_t countNumSelected(UVSelectMode mode, const ModelData &model)
 {
     size_t num_selected = 0;
@@ -124,7 +144,6 @@ static size_t countNumSelected(UVSelectMode mode, const ModelData &model)
     return num_selected;
 }
 
-// FIXME: optimize
 void UVEditor::selectConnected()
 {
     auto &model = MainWindow::instance().activeModel();
@@ -145,39 +164,17 @@ void UVEditor::selectConnected()
 
 void UVEditor::selectTouching()
 {
-    auto &model = MainWindow::instance().activeModel();
-    std::unordered_set<size_t> selected;
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-    {
-        for (size_t i = 0; i < model.texcoords.size(); i++)
-            if (model.texcoords[i].selected)
-                selected.insert(i);
-
-        for (auto &tri : model.triangles)
-        {
-            if (selected.contains(tri.texcoords[0]) ||
-                selected.contains(tri.texcoords[1]) ||
-                selected.contains(tri.texcoords[2]))
-                for (auto &tc : tri.texcoords)
-                    model.texcoords[tc].selected = true;
-        }
-    }
+        mutator.selectTouchingVerticesUV();
     else
-    {
-        for (auto &tri : model.triangles)
-            if (tri.selectedUV)
-                for (auto &tc : tri.texcoords)
-                    selected.insert(tc);
+        mutator.selectTouchingTrianglesUV();
 
-        for (auto &tri : model.triangles)
-        {
-            if (selected.contains(tri.texcoords[0]) ||
-                selected.contains(tri.texcoords[1]) ||
-                selected.contains(tri.texcoords[2]))
-                for (auto &tc : tri.texcoords)
-                    tri.selectedUV = true;
-        }
+    if (getSyncSelection())
+    {
+        mutator.syncSelectionUV();
+        MainWindow::instance().updateRenders();
     }
 
     this->_ui->uvDrawArea->update();
@@ -240,6 +237,16 @@ bool UVEditor::getModifyY() const
     return this->_ui->toolButton_2->isChecked();
 }
 
+bool UVEditor::getSyncSelection() const
+{
+	return this->_ui->actionSync_3D_Selection->isChecked();
+}
+
+void UVEditor::setSyncSelection(bool value) const
+{
+	this->_ui->actionSync_3D_Selection->setChecked(value);
+}
+
 void UVEditor::show()
 {
     this->setWindowFlag(Qt::WindowStaysOnTopHint, this->_ui->actionAlways_On_Top->isChecked());
@@ -270,10 +277,11 @@ void UVEditor::resetZoom()
 void UVEditor::nextSkin()
 {
     auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (!model.skins.empty())
     {
-        model.selectedSkin = std::min((int) model.skins.size() - 1, model.selectedSkin.value_or(0) + 1);
+        mutator.setNextSkin();
 	    this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
         MainWindow::instance().mdlRenderer().selectedSkinChanged();
     }
@@ -282,10 +290,11 @@ void UVEditor::nextSkin()
 void UVEditor::prevSkin()
 {
     auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (!model.skins.empty())
     {
-        model.selectedSkin = std::max(0, model.selectedSkin.value_or(0) - 1);
+        mutator.setPreviousSkin();
 	    this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
         MainWindow::instance().mdlRenderer().selectedSkinChanged();
     }
@@ -294,11 +303,6 @@ void UVEditor::prevSkin()
 void UVEditor::modelLoaded()
 {
     auto &model = MainWindow::instance().activeModel();
-
-    if (model.skins.empty())
-        model.selectedSkin = std::nullopt;
-    else
-        model.selectedSkin = 0;
     
 	this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
     resetZoom();

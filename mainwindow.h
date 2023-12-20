@@ -3,10 +3,10 @@
 #include <QMainWindow>
 #include <QOpenGLDebugLogger>
 #include "modeldata.h"
-#include "undoredo.h"
 #include "uveditor.h"
 #include <memory>
 #include <QFileInfo>
+#include <QFileDialog>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -63,18 +63,33 @@ public:
     bool animationInterpolated() const;
     int animationStartFrame() const;
     int animationEndFrame() const;
+    bool getSyncSelection() const;
+    void setSyncSelection(bool value) const;
     RenderParameters getRenderParameters(bool is_2d) const;
     EditorTool selectedTool() const;
-    constexpr ModelData &activeModel() { return _activeModel; }
-    constexpr const ModelData &activeModel() const { return _activeModel; }
+    SelectMode getSelectMode() const;
+    inline const ModelData &activeModel() const
+    {
+        if (_activeModel)
+            return *_activeModel;
+
+        static ModelData emptyModel;
+        return emptyModel;
+    }
+    constexpr ModelMutator &activeModelMutator()
+    {
+        if (!_activeModelMutator.isValid())
+            throw std::runtime_error("no model to mutate");
+        return _activeModelMutator;
+    }
     constexpr UVEditor &uvEditor() { return *_uveditor; }
     QMDLRenderer &mdlRenderer();
-    constexpr UndoRedo &undoRedo() { return *_undoRedo; }
 
     void setCurrentWorldPosition(const QVector3D &position);
     void frameCountChanged();
 
     void loadModel(QFileInfo path);
+    void saveModel(QFileInfo path);
     void clearModel();
 
     void updateRenders();
@@ -84,12 +99,14 @@ protected:
 
 private:
     Ui::MainWindow *_ui;
-    ModelData _activeModel;
+    std::unique_ptr<const ModelData> _activeModel;
+    ModelMutator _activeModelMutator;
     UVEditor *_uveditor;
-    UndoRedo *_undoRedo;
 
     void newClicked();
+    std::unique_ptr<QFileDialog> makeFileDialog(QString title, QFileDialog::FileMode mode, QFileDialog::AcceptMode accept);
     void openClicked();
+    void exportClicked();
     void frameChanged();
     void animationChanged();
     void toggleAnimation();

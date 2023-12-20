@@ -4,12 +4,13 @@
 #include <qopenglcontext.h>
 #include "settings.h"
 #include "quvpainter.h"
+#include "modelloader.h"
 #include <QMessageBox>
+#include <QMimeDatabase>
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
-    _ui(new Ui::MainWindow),
-	_undoRedo(new UndoRedo(this))
+    _ui(new Ui::MainWindow)
 {
 	_instance = this;
 
@@ -19,6 +20,7 @@ MainWindow::MainWindow(QWidget *parent) :
 	
     QObject::connect(this->_ui->actionNew, &QAction::triggered, this, &MainWindow::newClicked);
     QObject::connect(this->_ui->actionOpen, &QAction::triggered, this, &MainWindow::openClicked);
+    QObject::connect(this->_ui->actionExport, &QAction::triggered, this, &MainWindow::exportClicked);
 	QObject::connect(this->_ui->actionCapture_RenderDoc_Frame, &QAction::triggered, this->_ui->openGLWidget, &QMDLRenderer::captureRenderDoc);
 
 	QObject::connect(this->_ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::frameChanged);
@@ -70,7 +72,17 @@ MainWindow::MainWindow(QWidget *parent) :
 		else
 			this->_uveditor->show();
 	});
+
+	QObject::connect(this->_ui->actionSync_Skin_Selection, &QAction::toggled, [this] (bool value) {
+        this->uvEditor().setSyncSelection(value);
+        MainWindow::instance().updateRenders();
+    });
 	
+	QtUtils::setupGroupedButtons(this, {
+		this->_ui->toolButton_5, this->_ui->toolButton_4
+	}, [this] () { this->updateRenders(); });
+
+#if 0
 	QObject::connect(this->_ui->actionUndo, &QAction::triggered, [this] () { this->undoRedo().undo(this->_activeModel); this->updateRenders(); });
 	QObject::connect(this->_ui->actionRedo, &QAction::triggered, [this] () { this->undoRedo().redo(this->_activeModel); this->updateRenders(); });
 
@@ -78,6 +90,7 @@ MainWindow::MainWindow(QWidget *parent) :
 		this->_ui->actionUndo->setEnabled(this->undoRedo().canUndo());
 		this->_ui->actionRedo->setEnabled(this->undoRedo().canRedo());
 	});
+#endif
 }
 
 MainWindow::~MainWindow()
@@ -122,6 +135,16 @@ int MainWindow::animationEndFrame() const
 	return this->_ui->spinBox_3->value();
 }
 
+bool MainWindow::getSyncSelection() const
+{
+	return this->_ui->actionSync_Skin_Selection->isChecked();
+}
+
+void MainWindow::setSyncSelection(bool value) const
+{
+	this->_ui->actionSync_Skin_Selection->setChecked(value);
+}
+
 RenderParameters MainWindow::getRenderParameters(bool is_2d) const
 {
 	RenderMode mode;
@@ -161,6 +184,16 @@ EditorTool MainWindow::selectedTool() const
 	throw std::runtime_error("wat");
 }
 
+SelectMode MainWindow::getSelectMode() const
+{
+    if (this->_ui->toolButton_5->isChecked())
+        return SelectMode::Vertex;
+    else if (this->_ui->toolButton_4->isChecked())
+        return SelectMode::Face;
+
+    throw std::runtime_error("bad tool");
+}
+
 QMDLRenderer &MainWindow::mdlRenderer()
 {
 	return *_ui->openGLWidget;
@@ -183,643 +216,21 @@ void MainWindow::toggleAnimation()
 	this->_ui->openGLWidget->setAnimated(this->_ui->toolButton_14->isChecked());
 }
 
-#include <QFileDialog>
-
-constexpr QVector3D anorms[] = {
-	{-0.525731f, 0.000000f, 0.850651f}, 
-	{-0.442863f, 0.238856f, 0.864188f}, 
-	{-0.295242f, 0.000000f, 0.955423f}, 
-	{-0.309017f, 0.500000f, 0.809017f}, 
-	{-0.162460f, 0.262866f, 0.951056f}, 
-	{0.000000f, 0.000000f, 1.000000f}, 
-	{0.000000f, 0.850651f, 0.525731f}, 
-	{-0.147621f, 0.716567f, 0.681718f}, 
-	{0.147621f, 0.716567f, 0.681718f}, 
-	{0.000000f, 0.525731f, 0.850651f}, 
-	{0.309017f, 0.500000f, 0.809017f}, 
-	{0.525731f, 0.000000f, 0.850651f}, 
-	{0.295242f, 0.000000f, 0.955423f}, 
-	{0.442863f, 0.238856f, 0.864188f}, 
-	{0.162460f, 0.262866f, 0.951056f}, 
-	{-0.681718f, 0.147621f, 0.716567f}, 
-	{-0.809017f, 0.309017f, 0.500000f}, 
-	{-0.587785f, 0.425325f, 0.688191f}, 
-	{-0.850651f, 0.525731f, 0.000000f}, 
-	{-0.864188f, 0.442863f, 0.238856f}, 
-	{-0.716567f, 0.681718f, 0.147621f}, 
-	{-0.688191f, 0.587785f, 0.425325f}, 
-	{-0.500000f, 0.809017f, 0.309017f}, 
-	{-0.238856f, 0.864188f, 0.442863f}, 
-	{-0.425325f, 0.688191f, 0.587785f}, 
-	{-0.716567f, 0.681718f, -0.147621f}, 
-	{-0.500000f, 0.809017f, -0.309017f}, 
-	{-0.525731f, 0.850651f, 0.000000f}, 
-	{0.000000f, 0.850651f, -0.525731f}, 
-	{-0.238856f, 0.864188f, -0.442863f}, 
-	{0.000000f, 0.955423f, -0.295242f}, 
-	{-0.262866f, 0.951056f, -0.162460f}, 
-	{0.000000f, 1.000000f, 0.000000f}, 
-	{0.000000f, 0.955423f, 0.295242f}, 
-	{-0.262866f, 0.951056f, 0.162460f}, 
-	{0.238856f, 0.864188f, 0.442863f}, 
-	{0.262866f, 0.951056f, 0.162460f}, 
-	{0.500000f, 0.809017f, 0.309017f}, 
-	{0.238856f, 0.864188f, -0.442863f}, 
-	{0.262866f, 0.951056f, -0.162460f}, 
-	{0.500000f, 0.809017f, -0.309017f}, 
-	{0.850651f, 0.525731f, 0.000000f}, 
-	{0.716567f, 0.681718f, 0.147621f}, 
-	{0.716567f, 0.681718f, -0.147621f}, 
-	{0.525731f, 0.850651f, 0.000000f}, 
-	{0.425325f, 0.688191f, 0.587785f}, 
-	{0.864188f, 0.442863f, 0.238856f}, 
-	{0.688191f, 0.587785f, 0.425325f}, 
-	{0.809017f, 0.309017f, 0.500000f}, 
-	{0.681718f, 0.147621f, 0.716567f}, 
-	{0.587785f, 0.425325f, 0.688191f}, 
-	{0.955423f, 0.295242f, 0.000000f}, 
-	{1.000000f, 0.000000f, 0.000000f}, 
-	{0.951056f, 0.162460f, 0.262866f}, 
-	{0.850651f, -0.525731f, 0.000000f}, 
-	{0.955423f, -0.295242f, 0.000000f}, 
-	{0.864188f, -0.442863f, 0.238856f}, 
-	{0.951056f, -0.162460f, 0.262866f}, 
-	{0.809017f, -0.309017f, 0.500000f}, 
-	{0.681718f, -0.147621f, 0.716567f}, 
-	{0.850651f, 0.000000f, 0.525731f}, 
-	{0.864188f, 0.442863f, -0.238856f}, 
-	{0.809017f, 0.309017f, -0.500000f}, 
-	{0.951056f, 0.162460f, -0.262866f}, 
-	{0.525731f, 0.000000f, -0.850651f}, 
-	{0.681718f, 0.147621f, -0.716567f}, 
-	{0.681718f, -0.147621f, -0.716567f}, 
-	{0.850651f, 0.000000f, -0.525731f}, 
-	{0.809017f, -0.309017f, -0.500000f}, 
-	{0.864188f, -0.442863f, -0.238856f}, 
-	{0.951056f, -0.162460f, -0.262866f}, 
-	{0.147621f, 0.716567f, -0.681718f}, 
-	{0.309017f, 0.500000f, -0.809017f}, 
-	{0.425325f, 0.688191f, -0.587785f}, 
-	{0.442863f, 0.238856f, -0.864188f}, 
-	{0.587785f, 0.425325f, -0.688191f}, 
-	{0.688191f, 0.587785f, -0.425325f}, 
-	{-0.147621f, 0.716567f, -0.681718f}, 
-	{-0.309017f, 0.500000f, -0.809017f}, 
-	{0.000000f, 0.525731f, -0.850651f}, 
-	{-0.525731f, 0.000000f, -0.850651f}, 
-	{-0.442863f, 0.238856f, -0.864188f}, 
-	{-0.295242f, 0.000000f, -0.955423f}, 
-	{-0.162460f, 0.262866f, -0.951056f}, 
-	{0.000000f, 0.000000f, -1.000000f}, 
-	{0.295242f, 0.000000f, -0.955423f}, 
-	{0.162460f, 0.262866f, -0.951056f}, 
-	{-0.442863f, -0.238856f, -0.864188f}, 
-	{-0.309017f, -0.500000f, -0.809017f}, 
-	{-0.162460f, -0.262866f, -0.951056f}, 
-	{0.000000f, -0.850651f, -0.525731f}, 
-	{-0.147621f, -0.716567f, -0.681718f}, 
-	{0.147621f, -0.716567f, -0.681718f}, 
-	{0.000000f, -0.525731f, -0.850651f}, 
-	{0.309017f, -0.500000f, -0.809017f}, 
-	{0.442863f, -0.238856f, -0.864188f}, 
-	{0.162460f, -0.262866f, -0.951056f}, 
-	{0.238856f, -0.864188f, -0.442863f}, 
-	{0.500000f, -0.809017f, -0.309017f}, 
-	{0.425325f, -0.688191f, -0.587785f}, 
-	{0.716567f, -0.681718f, -0.147621f}, 
-	{0.688191f, -0.587785f, -0.425325f}, 
-	{0.587785f, -0.425325f, -0.688191f}, 
-	{0.000000f, -0.955423f, -0.295242f}, 
-	{0.000000f, -1.000000f, 0.000000f}, 
-	{0.262866f, -0.951056f, -0.162460f}, 
-	{0.000000f, -0.850651f, 0.525731f}, 
-	{0.000000f, -0.955423f, 0.295242f}, 
-	{0.238856f, -0.864188f, 0.442863f}, 
-	{0.262866f, -0.951056f, 0.162460f}, 
-	{0.500000f, -0.809017f, 0.309017f}, 
-	{0.716567f, -0.681718f, 0.147621f}, 
-	{0.525731f, -0.850651f, 0.000000f}, 
-	{-0.238856f, -0.864188f, -0.442863f}, 
-	{-0.500000f, -0.809017f, -0.309017f}, 
-	{-0.262866f, -0.951056f, -0.162460f}, 
-	{-0.850651f, -0.525731f, 0.000000f}, 
-	{-0.716567f, -0.681718f, -0.147621f}, 
-	{-0.716567f, -0.681718f, 0.147621f}, 
-	{-0.525731f, -0.850651f, 0.000000f}, 
-	{-0.500000f, -0.809017f, 0.309017f}, 
-	{-0.238856f, -0.864188f, 0.442863f}, 
-	{-0.262866f, -0.951056f, 0.162460f}, 
-	{-0.864188f, -0.442863f, 0.238856f}, 
-	{-0.809017f, -0.309017f, 0.500000f}, 
-	{-0.688191f, -0.587785f, 0.425325f}, 
-	{-0.681718f, -0.147621f, 0.716567f}, 
-	{-0.442863f, -0.238856f, 0.864188f}, 
-	{-0.587785f, -0.425325f, 0.688191f}, 
-	{-0.309017f, -0.500000f, 0.809017f}, 
-	{-0.147621f, -0.716567f, 0.681718f}, 
-	{-0.425325f, -0.688191f, 0.587785f}, 
-	{-0.162460f, -0.262866f, 0.951056f}, 
-	{0.442863f, -0.238856f, 0.864188f}, 
-	{0.162460f, -0.262866f, 0.951056f}, 
-	{0.309017f, -0.500000f, 0.809017f}, 
-	{0.147621f, -0.716567f, 0.681718f}, 
-	{0.000000f, -0.525731f, 0.850651f}, 
-	{0.425325f, -0.688191f, 0.587785f}, 
-	{0.587785f, -0.425325f, 0.688191f}, 
-	{0.688191f, -0.587785f, 0.425325f}, 
-	{-0.955423f, 0.295242f, 0.000000f}, 
-	{-0.951056f, 0.162460f, 0.262866f}, 
-	{-1.000000f, 0.000000f, 0.000000f}, 
-	{-0.850651f, 0.000000f, 0.525731f}, 
-	{-0.955423f, -0.295242f, 0.000000f}, 
-	{-0.951056f, -0.162460f, 0.262866f}, 
-	{-0.864188f, 0.442863f, -0.238856f}, 
-	{-0.951056f, 0.162460f, -0.262866f}, 
-	{-0.809017f, 0.309017f, -0.500000f}, 
-	{-0.864188f, -0.442863f, -0.238856f}, 
-	{-0.951056f, -0.162460f, -0.262866f}, 
-	{-0.809017f, -0.309017f, -0.500000f}, 
-	{-0.681718f, 0.147621f, -0.716567f}, 
-	{-0.681718f, -0.147621f, -0.716567f}, 
-	{-0.850651f, 0.000000f, -0.525731f}, 
-	{-0.688191f, 0.587785f, -0.425325f}, 
-	{-0.587785f, 0.425325f, -0.688191f}, 
-	{-0.425325f, 0.688191f, -0.587785f}, 
-	{-0.425325f, -0.688191f, -0.587785f}, 
-	{-0.587785f, -0.425325f, -0.688191f}, 
-	{-0.688191f, -0.587785f, -0.425325f}
-};
-
-/*
-==============
-LoadPCX
-==============
-*/
-struct pcx_t
-{
-    int8_t   manufacturer;
-    int8_t   version;
-    int8_t   encoding;
-    int8_t   bits_per_pixel;
-    uint16_t xmin,ymin,xmax,ymax;
-    uint16_t hres,vres;
-    uint8_t  palette[48];
-    int8_t   reserved;
-    int8_t   color_planes;
-    uint16_t bytes_per_line;
-    uint16_t palette_type;
-    int8_t   filler[58];
-};
-
-bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
-{
-    pcx_t   pcx;
-    int     x, y;
-    uint8_t dataByte, runLength;
-    byte    *pix, *raw_pix;
-
-    //
-    // parse the PCX file
-    //
-	skinStream >> pcx.manufacturer >> pcx.version >> pcx.encoding >> pcx.bits_per_pixel;
-	skinStream >> pcx.xmin >> pcx.ymin >> pcx.xmax >> pcx.ymax;
-	skinStream >> pcx.hres >> pcx.vres;
-	skinStream.skipRawData(sizeof(pcx_t::palette));
-	skinStream >> pcx.reserved >> pcx.color_planes;
-	skinStream >> pcx.bytes_per_line >> pcx.palette_type;
-	skinStream.skipRawData(sizeof(pcx_t::filler));
-
-    if (pcx.manufacturer != 0x0a
-        || pcx.version != 5
-        || pcx.encoding != 1
-        || pcx.bits_per_pixel != 8)
-    {
-		return false;
-    }
-
-	skin.width = pcx.xmax + 1;
-	skin.height = pcx.ymax + 1;
-
-	SkinPaletteData &raw_data = skin.raw_data.emplace(SkinPaletteData{});
-	raw_data.data.resize(skin.width * skin.height);
-	std::vector<uint8_t> &palette = raw_data.palette.emplace(std::vector<uint8_t>(static_cast<size_t>(768)));
-
-	skin.image = QImage(skin.width, skin.height, QImage::Format_ARGB32);
-
-	raw_pix = raw_data.data.data();
-	pix = skin.image.bits();
-
-	skinStream.device()->seek(skinStream.device()->size() - 768);
-
-	skinStream.readRawData(reinterpret_cast<char *>(palette.data()), 768);
-
-	skinStream.device()->seek(sizeof(pcx_t));
-
-    for (y=0 ; y<=pcx.ymax ; y++, pix += (pcx.xmax + 1) * 4, raw_pix += (pcx.xmax + 1))
-    {
-        for (x=0; x<=pcx.xmax ; )
-        {
-            skinStream >> dataByte;
-
-            if((dataByte & 0xC0) == 0xC0)
-            {
-                runLength = dataByte & 0x3F;
-                skinStream >> dataByte;
-            }
-            else
-                runLength = 1;
-
-            while(runLength-- > 0)
-			{
-                pix[(x * 4) + 2] = palette[(dataByte * 3) + 0];
-                pix[(x * 4) + 1] = palette[(dataByte * 3) + 1];
-                pix[(x * 4) + 0] = palette[(dataByte * 3) + 2];
-				pix[(x * 4) + 3] = 0xFF;
-				raw_pix[x] = dataByte;
-				x++;
-			}
-        }
-    }
-
-	return true;
-}
-
-
-/*
-========================================================================
-
-.MD2 triangle model file format
-
-========================================================================
-*/
-constexpr int32_t MD2_MAGIC = (('2'<<24)+('P'<<16)+('D'<<8)+'I');
-constexpr int32_t MD2_VERSION = 8;
-
-constexpr size_t MD2_MAX_SKINNAME = 64;
-constexpr size_t MD2_MAX_FRAMENAME = 16;
-
-struct dstvert_t
-{
-	int16_t	s;
-	int16_t	t;
-};
-
-struct dtriangle_t
-{
-	std::array<int16_t, 3> index_xyz;
-	std::array<int16_t, 3> index_st;
-};
-
-struct dtrivertx_t
-{
-	std::array<uint8_t, 3> v;			// scaled byte to fit in frame mins/maxs
-	uint8_t				   lightnormalindex;
-};
-
-struct daliasframe_t
-{
-	std::array<float, 3> scale;	// multiply byte verts by this
-	std::array<float, 3> translate;	// then add this
-	char		         name[MD2_MAX_FRAMENAME];	// frame name from grabbing
-};
-
-struct dmdl_t
-{
-	int32_t	ident;
-	int32_t	version;
-
-	int32_t	skinwidth;
-	int32_t	skinheight;
-	int32_t	framesize;		// byte size of each frame
-
-	int32_t	num_skins;
-	int32_t	num_xyz;
-	int32_t	num_st;			// greater than num_xyz for seams
-	int32_t	num_tris;
-	int32_t	num_glcmds;		// dwords in strip/fan command list
-	int32_t	num_frames;
-
-	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
-	int32_t	ofs_st;			// byte offset from start for stverts
-	int32_t	ofs_tris;		// offset for dtriangles
-	int32_t	ofs_frames;		// offset for first frame
-	int32_t	ofs_glcmds;	
-	int32_t	ofs_end;		// end of file
-};
-
-ModelData LoadMD2(QString filename)
-{
-    QFile file(filename);
-
-    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-        throw std::runtime_error("bad");
-
-    QDataStream stream(&file);
-    stream.setByteOrder(QDataStream::LittleEndian);
-	stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
-
-	dmdl_t header;
-	stream.readRawData(reinterpret_cast<char *>(&header), sizeof(header));
-
-	ModelData data;
-
-	data.frames.resize(header.num_frames);
-
-	for (auto &frame : data.frames)
-		frame.vertices.resize(header.num_xyz);
-
-	data.vertices.resize(header.num_xyz);
-
-	file.seek(header.ofs_frames);
-
-	for (auto &frame : data.frames)
-	{
-		qint64 pos = file.pos();
-		daliasframe_t frame_header;
-		stream >> frame_header.scale[0] >> frame_header.scale[1] >> frame_header.scale[2];
-		pos = file.pos();
-		stream >> frame_header.translate[0] >> frame_header.translate[1] >> frame_header.translate[2];
-		pos = file.pos();
-		stream.readRawData(frame_header.name, sizeof(frame_header.name));
-		frame_header.name[sizeof(frame_header.name) - 1] = '\0';
-
-		frame.name = frame_header.name;
-
-		for (auto &vert : frame.vertices)
-		{
-			dtrivertx_t v;
-			stream >> v.v[0] >> v.v[1] >> v.v[2];
-			stream >> v.lightnormalindex;
-
-			vert.position = {
-				(v.v[0] * frame_header.scale[0]) + frame_header.translate[0],
-				(v.v[1] * frame_header.scale[1]) + frame_header.translate[1],
-				(v.v[2] * frame_header.scale[2]) + frame_header.translate[2]
-			};
-			vert.normal = anorms[v.lightnormalindex];
-		}
-	}
-
-	file.seek(header.ofs_st);
-	data.texcoords.resize(header.num_st);
-
-	for (auto &st : data.texcoords)
-	{
-		dstvert_t v;
-		stream >> v.s >> v.t;
-		st.pos = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
-	}
-
-	file.seek(header.ofs_tris);
-	data.triangles.resize(header.num_tris);
-
-	for (auto &tri : data.triangles)
-	{
-		dtriangle_t t;
-		stream >> t.index_xyz[0] >> t.index_xyz[1] >> t.index_xyz[2];
-		stream >> t.index_st[0] >> t.index_st[1] >> t.index_st[2];
-		
-		std::copy(t.index_xyz.begin(), t.index_xyz.end(), tri.vertices.begin());
-		std::copy(t.index_st.begin(), t.index_st.end(), tri.texcoords.begin());
-	}
-
-	data.skins.resize(header.num_skins);
-	
-	file.seek(header.ofs_skins);
-
-	QDir model_dir = QFileInfo(filename).dir();
-	QString model_file = model_dir.absolutePath();
-
-	for (auto &skin : data.skins)
-	{
-		char skin_path[MD2_MAX_SKINNAME];
-		stream.readRawData(skin_path, sizeof(skin_path));
-		skin_path[sizeof(skin_path) - 1] = '\0';
-
-		// try to find the matching PCX file
-		QDir skin_dir = model_dir;
-		QFileInfo skin_file;
-
-		while (!skin_dir.isRoot())
-		{
-			skin_file = QFileInfo(skin_dir.filePath(skin_path));
-
-			if (skin_file.exists())
-				break;
-
-			skin_dir.cdUp();
-		}
-
-		if (!skin_file.exists())
-			continue;
-
-		QFile sf = QFile(skin_file.filePath());
-
-		if (!sf.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-			continue;
-		
-		QDataStream skinStream(&sf);
-		skinStream.setByteOrder(QDataStream::LittleEndian);
-		skinStream.setFloatingPointPrecision(QDataStream::SinglePrecision);
-
-		LoadPCX(skinStream, skin);
-	}
-
-	return data;
-}
-
-
-/*
-========================================================================
-
-.MD2F triangle model file format
-
-========================================================================
-*/
-constexpr int32_t MD2F_VERSION = 9;
-
-struct dtrivertxf_t
-{
-	QVector3D	position;
-	QVector3D	normal;
-};
-
-struct daliasframef_t
-{
-	char		         name[MD2_MAX_FRAMENAME];	// frame name from grabbing
-};
-
-struct dmd2f_t
-{
-	int32_t	ident;
-	int32_t	version;
-
-	int32_t	skinwidth;
-	int32_t	skinheight;
-	int32_t	framesize;		// byte size of each frame
-
-	int32_t	num_skins;
-	int32_t	num_xyz;
-	int32_t	num_st;			// greater than num_xyz for seams
-	int32_t	num_tris;
-	int32_t	num_frames;
-
-	int32_t	ofs_skins;		// each skin is a MAX_SKINNAME string
-	int32_t	ofs_st;			// byte offset from start for stverts
-	int32_t	ofs_tris;		// offset for dtriangles
-	int32_t	ofs_frames;		// offset for first frame
-	int32_t	ofs_end;		// end of file
-};
-
-ModelData LoadMD2F(QString filename)
-{
-    QFile file(filename);
-
-    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-        throw std::runtime_error("bad");
-
-    QDataStream stream(&file);
-    stream.setByteOrder(QDataStream::LittleEndian);
-	stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
-
-	dmd2f_t header;
-	stream.readRawData(reinterpret_cast<char *>(&header), sizeof(header));
-
-	ModelData data;
-
-	data.frames.resize(header.num_frames);
-
-	for (auto &frame : data.frames)
-		frame.vertices.resize(header.num_xyz);
-
-	data.vertices.resize(header.num_xyz);
-
-	file.seek(header.ofs_frames);
-
-	for (auto &frame : data.frames)
-	{
-		qint64 pos = file.pos();
-		daliasframef_t frame_header;
-		stream.readRawData(frame_header.name, sizeof(frame_header.name));
-		frame_header.name[sizeof(frame_header.name) - 1] = '\0';
-
-		frame.name = frame_header.name;
-
-		for (auto &vert : frame.vertices)
-		{
-			dtrivertxf_t v;
-			stream >> v.position[0] >> v.position[1] >> v.position[2];
-			stream >> v.normal[0] >> v.normal[1] >> v.normal[2];
-
-			vert.position = v.position;
-			vert.normal = v.normal;
-		}
-	}
-
-	file.seek(header.ofs_st);
-	data.texcoords.resize(header.num_st);
-
-	for (auto &st : data.texcoords)
-	{
-		dstvert_t v;
-		stream >> v.s >> v.t;
-		st.pos = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
-	}
-
-	file.seek(header.ofs_tris);
-	data.triangles.resize(header.num_tris);
-
-	for (auto &tri : data.triangles)
-	{
-		dtriangle_t t;
-		stream >> t.index_xyz[0] >> t.index_xyz[1] >> t.index_xyz[2];
-		stream >> t.index_st[0] >> t.index_st[1] >> t.index_st[2];
-		
-		std::copy(t.index_xyz.begin(), t.index_xyz.end(), tri.vertices.begin());
-		std::copy(t.index_st.begin(), t.index_st.end(), tri.texcoords.begin());
-	}
-
-	data.skins.resize(header.num_skins);
-	
-	file.seek(header.ofs_skins);
-
-	QDir model_dir = QFileInfo(filename).dir();
-	QString model_file = model_dir.absolutePath();
-
-	for (auto &skin : data.skins)
-	{
-		char skin_path[MD2_MAX_SKINNAME];
-		stream.readRawData(skin_path, sizeof(skin_path));
-		skin_path[sizeof(skin_path) - 1] = '\0';
-
-		// try to find the matching PCX file
-		QDir skin_dir = model_dir;
-		QFileInfo skin_file;
-
-		while (!skin_dir.isRoot())
-		{
-			skin_file = QFileInfo(skin_dir.filePath(skin_path));
-
-			if (skin_file.exists())
-				break;
-
-			skin_dir.cdUp();
-		}
-
-		if (!skin_file.exists())
-			continue;
-
-		QFile sf = QFile(skin_file.filePath());
-
-		if (!sf.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-			continue;
-		
-		QDataStream skinStream(&sf);
-		skinStream.setByteOrder(QDataStream::LittleEndian);
-		skinStream.setFloatingPointPrecision(QDataStream::SinglePrecision);
-
-		LoadPCX(skinStream, skin);
-	}
-
-	return data;
-}
-
-enum class FileType
-{
-	QuakeMDL,
-	MD2,
-	MD2F,
-	MD3,
-	Unknown
-};
-
-FileType determineModelFormat(QFileInfo filename)
-{
-	QString suffix = filename.completeSuffix();
-	
-	if (suffix.compare("md2", Qt::CaseInsensitive) == 0)
-		return FileType::MD2;
-	else if (suffix.compare("md2f", Qt::CaseInsensitive) == 0)
-		return FileType::MD2F;
-	else if (suffix.compare("mdl", Qt::CaseInsensitive) == 0)
-		return FileType::QuakeMDL;
-
-	return FileType::Unknown;
-}
-
 void MainWindow::loadModel(QFileInfo path)
 {
-	FileType type = determineModelFormat(path);
-
-	if (type == FileType::MD2)
-	    _activeModel = LoadMD2(path.filePath());
-	else if (type == FileType::MD2F)
-	    _activeModel = LoadMD2F(path.filePath());
-	else
+	try
+	{
+		static QMimeDatabase db;
+		std::unique_ptr<ModelData> model = ModelLoader::load(path, db.mimeTypeForFile(path.filePath()));
+		_activeModelMutator = ModelMutator { model.get() };
+		_activeModel.reset(model.release());
+	}
+	catch(std::runtime_error e)
 	{
 		QMessageBox::warning(this, tr("QTMDL"), tr("Unknown file type."));
 		return;
 	}
+
 	this->_uveditor->modelLoaded();
 	this->_ui->openGLWidget->modelLoaded();
 	this->updateRenders();
@@ -827,9 +238,16 @@ void MainWindow::loadModel(QFileInfo path)
 	Settings().setModelDialogLocation(path.dir().path());
 }
 
+void MainWindow::saveModel(QFileInfo path)
+{
+	static QMimeDatabase db;
+	ModelLoader::save(activeModel(), path, db.mimeTypeForFile(path.filePath()));
+	Settings().setModelDialogLocation(path.dir().path());
+}
+
 void MainWindow::clearModel()
 {
-	_activeModel = {};
+	_activeModel.reset();
 	this->_uveditor->modelLoaded();
 	this->_ui->openGLWidget->modelLoaded();
 	this->updateRenders();
@@ -855,24 +273,62 @@ void MainWindow::newClicked()
 	clearModel();
 }
 
+std::unique_ptr<QFileDialog> MainWindow::makeFileDialog(QString title, QFileDialog::FileMode mode, QFileDialog::AcceptMode accept)
+{
+	// TODO: are you sure?
+    QFileDialog *dlg = new QFileDialog(this, title, Settings().getModelDialogLocation());
+
+	dlg->setFileMode(mode);
+	dlg->setAcceptMode(accept);
+
+	dlg->setMimeTypeFilters({
+		"x-qtmdl/md2",
+		"x-qtmdl/md2f",
+		"application/octet-stream"
+	});
+
+	// compose filter for all supported types
+	// https://stackoverflow.com/a/46534037
+	QMimeDatabase mimeDB;
+	QStringList allSupportedFormats;
+	for(const QString& mimeTypeFilter : dlg->mimeTypeFilters())
+	{
+		QMimeType mimeType = mimeDB.mimeTypeForName(mimeTypeFilter);
+		if (mimeType.isValid())
+			allSupportedFormats.append(mimeType.globPatterns());
+	}
+	QString allSupportedFormatsFilter = QString("All supported formats (%1)").arg(allSupportedFormats.join(' '));
+	
+	QStringList nameFilters = dlg->nameFilters();
+	nameFilters.prepend(allSupportedFormatsFilter);
+	dlg->setNameFilters(nameFilters);
+	return std::unique_ptr<QFileDialog>(dlg);
+}
+
 void MainWindow::openClicked()
 {
 	// TODO: are you sure?
-	// TODO: in future, use MIME database
-	static const QStringList filters({
-		"Supported files (*.md3 *.md2 *.md2f *.mdl)",
-		//"All files (*)"
-	});
+    std::unique_ptr<QFileDialog> dlg = makeFileDialog("Load Model", QFileDialog::ExistingFile, QFileDialog::AcceptOpen);
 
-    QFileDialog dlg(this, "Load MD2", Settings().getModelDialogLocation());
-	dlg.setNameFilters(filters);
-    if (dlg.exec() == QFileDialog::Accepted)
-		loadModel(QFileInfo(dlg.selectedFiles()[0]));
+    if (dlg->exec() == QFileDialog::Accepted)
+		loadModel(QFileInfo(dlg->selectedFiles()[0]));
+}
+
+void MainWindow::exportClicked()
+{
+	// TODO: are you sure?
+    std::unique_ptr<QFileDialog> dlg = makeFileDialog("Export Model", QFileDialog::FileMode::AnyFile, QFileDialog::AcceptSave);
+
+    if (dlg->exec() == QFileDialog::Accepted)
+	{
+		// TODO: pass selected mime filter
+		saveModel(QFileInfo(dlg->selectedFiles()[0]));
+	}
 }
 
 void MainWindow::frameCountChanged()
 {
-	int maxFrames = (int) (_activeModel.frames.size() - 1);
+	int maxFrames = (int) (_activeModel->frames.size() - 1);
 
 	this->_ui->horizontalSlider->setMaximum(maxFrames);
 	this->_ui->spinBox_2->setMaximum(maxFrames);
@@ -883,12 +339,12 @@ void MainWindow::frameCountChanged()
 
 void MainWindow::frameChanged()
 {
-	_activeModel.selectedFrame = this->_ui->horizontalSlider->value();
+	_activeModelMutator.setSelectedFrame(this->_ui->horizontalSlider->value());
 
 	updateRenders();
 
-	this->_ui->label_5->setText(QString::asprintf("%i", _activeModel.selectedFrame));
+	this->_ui->label_5->setText(QString::asprintf("%i", _activeModel->selectedFrame));
 
-	if (_activeModel.frames.size())
-		this->_ui->label_frameName->setText(QString::fromStdString(_activeModel.frames[_activeModel.selectedFrame].name));
+	if (_activeModel->frames.size())
+		this->_ui->label_frameName->setText(QString::fromStdString(_activeModel->frames[_activeModel->selectedFrame].name));
 }

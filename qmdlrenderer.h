@@ -27,6 +27,7 @@ struct GPUVertexData
 {
     QVector3D position;
     QVector2D texcoord;
+    VertexColor color;
 };
 
 struct GPUPointData
@@ -128,7 +129,7 @@ private:
 #ifdef RENDERDOC_SUPPORT
     bool _doRenderDoc;
 #endif
-    ModelData &activeModel();
+    const ModelData &activeModel();
 
 	GLuint createShader(GLenum type, const char *source);
 	GLuint createProgram(GLuint vertexShader, GLuint fragmentShader);

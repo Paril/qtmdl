@@ -238,10 +238,11 @@ void QMDLRenderer::initializeGL()
     glBindVertexArray(_vao);
     glEnableVertexAttribArray(ATTRIB_POSITION);
     glEnableVertexAttribArray(ATTRIB_TEXCOORD);
-    glDisableVertexAttribArray(ATTRIB_COLOR);
+    glEnableVertexAttribArray(ATTRIB_COLOR);
     glEnableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
     glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
+    glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, color)));
     glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_FLOAT, false, 0, nullptr);
 
@@ -355,14 +356,14 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
 
         if (!drag.isIdentity())
         {
-            MainWindow::instance().undoRedo().push(activeModel());
-
+#if 0
             for (auto &frame : activeModel().frames)
                 for (auto &vert : frame.vertices)
                 {
                     vert.position = drag.map(vert.position);
                     vert.normal = drag.mapVector(vert.normal);
                 }
+#endif
         }
     }
 
@@ -1031,6 +1032,11 @@ void QMDLRenderer::rebuildBuffer()
                 ov1.texcoord = st1.pos;
                 ov2.texcoord = st2.pos;
             }
+
+            if (MainWindow::instance().getSelectMode() == SelectMode::Face)
+                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected3D : EditorColorId::FaceUnselected3D);
+            else
+                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::FaceUnselected3D);
         }
 
         {
@@ -1041,10 +1047,15 @@ void QMDLRenderer::rebuildBuffer()
             ov0.position = positions[0];
             ov1.position = positions[1];
             ov2.position = positions[2];
-            
-            ov0.color = Settings().getEditorColor(gv0.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
-            ov1.color = Settings().getEditorColor(gv1.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
-            ov2.color = Settings().getEditorColor(gv2.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+
+            if (MainWindow::instance().getSelectMode() == SelectMode::Vertex)
+            {
+                ov0.color = Settings().getEditorColor(gv0.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+                ov1.color = Settings().getEditorColor(gv1.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+                ov2.color = Settings().getEditorColor(gv2.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+            }
+            else
+                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::VertexTickUnselected3D);
         }
 
         n += 3;
@@ -1056,7 +1067,7 @@ void QMDLRenderer::rebuildBuffer()
     uploadToBuffer(_flatNormalBuffer, full_upload, _flatNormalData);
 }
 
-ModelData &QMDLRenderer::activeModel()
+const ModelData &QMDLRenderer::activeModel()
 {
     return MainWindow::instance().activeModel();
 }
@@ -1086,6 +1097,7 @@ void QMDLRenderer::selectedSkinChanged()
 void QMDLRenderer::modelLoaded()
 {
     selectedSkinChanged();
+    _2dOffset = -activeModel().boundsOfAllFrames().centroid();
 }
 
 void QMDLRenderer::captureRenderDoc(bool)

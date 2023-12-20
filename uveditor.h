@@ -49,6 +49,8 @@ public:
     QUVPainter &getPainter();
     bool getModifyX() const;
     bool getModifyY() const;
+    bool getSyncSelection() const;
+    void setSyncSelection(bool value) const;
 
     void resetZoom();
     void modelLoaded();

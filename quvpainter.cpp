@@ -14,8 +14,8 @@ QUVPainter::QUVPainter(QWidget *parent) :
 
 /*virtual*/ void QUVPainter::paintEvent(QPaintEvent *event) /*override*/
 {
-    ModelData &model = MainWindow::instance().activeModel();
-    const ModelSkin *skin = model.getSelectedSkin();
+    auto &model = MainWindow::instance().activeModel();
+    auto skin = model.getSelectedSkin();
 
     if (!skin)
         return;
@@ -108,7 +108,8 @@ void QUVPainter::mousePressEvent(QMouseEvent *e)
 void QUVPainter::rectangleSelect(QMouseEvent *e, QRectF rect, QVector2D tcScale)
 {
     auto &uvEditor = MainWindow::instance().uvEditor();
-    ModelData &model = MainWindow::instance().activeModel();
+    auto &model = MainWindow::instance().activeModel();
+    auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (uvEditor.getSelectMode() == UVSelectMode::Vertex)
     {
@@ -119,56 +120,16 @@ void QUVPainter::rectangleSelect(QMouseEvent *e, QRectF rect, QVector2D tcScale)
             rect.setWidth(5 / tcScale.x());
             rect.setHeight(5 / tcScale.y());
         }
-                
-        for (auto &tc : model.texcoords)
-        {
-            if (rect.contains(tc.pos.toPointF()))
-            {
-                if (e->modifiers() & Qt::KeyboardModifier::AltModifier)
-                    tc.selected = false;
-                else
-                    tc.selected = true;
-            }
-        }
-    }
-    else if (!rect.width() || !rect.height())
-    {
-        for (auto &tri : model.triangles)
-        {
-            QPolygonF polygon({
-                model.texcoords[tri.texcoords[0]].pos.toPointF(),
-                model.texcoords[tri.texcoords[1]].pos.toPointF(),
-                model.texcoords[tri.texcoords[2]].pos.toPointF()
-            });
 
-            if (polygon.containsPoint(rect.topLeft(), Qt::WindingFill))
-            {
-                if (e->modifiers() & Qt::KeyboardModifier::AltModifier)
-                    tri.selectedUV = false;
-                else
-                    tri.selectedUV = true;
-            }
-        }
+        mutator.selectRectangleVerticesUV(rect, e->modifiers());
     }
     else
+        mutator.selectRectangleTrianglesUV(rect, e->modifiers());
+
+    if (uvEditor.getSyncSelection())
     {
-        for (auto &tri : model.triangles)
-        {
-            for (auto &tci : tri.texcoords)
-            {
-                auto &tc = model.texcoords[tci];
-
-                if (rect.contains(tc.pos.toPointF()))
-                {
-                    if (e->modifiers() & Qt::KeyboardModifier::AltModifier)
-                        tri.selectedUV = false;
-                    else
-                        tri.selectedUV = true;
-
-                    break;
-                }
-            }
-        }
+        mutator.syncSelectionUV();
+        MainWindow::instance().updateRenders();
     }
 }
 
@@ -177,8 +138,8 @@ void QUVPainter::mouseReleaseEvent(QMouseEvent *e)
     if (!_dragging)
         return;
 
-    ModelData &model = MainWindow::instance().activeModel();
-    const ModelSkin *skin = model.getSelectedSkin();
+    auto &model = MainWindow::instance().activeModel();
+    auto skin = model.getSelectedSkin();
 
     if (skin)
     {
@@ -199,8 +160,6 @@ void QUVPainter::mouseReleaseEvent(QMouseEvent *e)
                 if (!drag.isIdentity())
                 {
 #if 0
-                    MainWindow::instance().undoRedo.push(activeModel());
-
                     for (auto &frame : activeModel().frames)
                         for (auto &vert : frame.vertices)
                         {
@@ -225,8 +184,8 @@ QMatrix4x4 QUVPainter::getDragMatrix()
     if (!_dragging || _dragDelta.isNull())
         return matrix;
 
-    ModelData &model = MainWindow::instance().activeModel();
-    const ModelSkin *skin = model.getSelectedSkin();
+    auto &model = MainWindow::instance().activeModel();
+    auto skin = model.getSelectedSkin();
 
     if (!skin)
         return matrix;
