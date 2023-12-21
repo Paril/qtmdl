@@ -34,8 +34,8 @@ QUVPainter::QUVPainter(QWidget *parent) :
 
     if (uvEditor.getLineDisplayMode() == LineDisplayMode::Simple)
     {
-        painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineUnselected2D));
-        painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceUnselected2D)));
+        painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineUnselectedUV));
+        painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceUnselectedUV)));
 
         for (auto &v : model.triangles)
         {
@@ -53,8 +53,8 @@ QUVPainter::QUVPainter(QWidget *parent) :
 
         if (uvEditor.getSelectMode() == UVSelectMode::Face)
         {
-            painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineSelected2D));
-            painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceSelected2D)));
+            painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineSelectedUV));
+            painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceSelectedUV)));
 
             for (auto &v : model.triangles)
             {
@@ -79,7 +79,7 @@ QUVPainter::QUVPainter(QWidget *parent) :
             QVector2D pos = coordinates[i] * tcScale;
 
             const QColor &color = Settings().getEditorColor(verticesSelected.contains(i) ?
-                EditorColorId::VertexTickSelected2D : EditorColorId::VertexTickUnselected2D); 
+                EditorColorId::VertexTickSelectedUV : EditorColorId::VertexTickUnselectedUV); 
 
             if (uvEditor.getVertexDisplayMode() == VertexDisplayMode::Squares)
                 painter.fillRect(pos.x() - 1, pos.y() - 1, 3, 3, color);

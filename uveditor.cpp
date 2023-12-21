@@ -242,9 +242,10 @@ bool UVEditor::getSyncSelection() const
 	return this->_ui->actionSync_3D_Selection->isChecked();
 }
 
-void UVEditor::setSyncSelection(bool value) const
+void UVEditor::setSyncSelection(bool value)
 {
 	this->_ui->actionSync_3D_Selection->setChecked(value);
+	MainWindow::instance().activeModelMutator().syncSelectionUV();
 }
 
 void UVEditor::show()

@@ -28,6 +28,7 @@ struct GPUVertexData
     QVector3D position;
     QVector2D texcoord;
     VertexColor color;
+    VertexColor color_secondary;
 };
 
 struct GPUPointData
@@ -62,7 +63,7 @@ struct QuadRect { int x, y, w, h; };
 struct ProgramShared
 {
     GLuint program;
-    GLint projectionUniformLocation, modelviewUniformLocation, shadedUniformLocation;
+    GLint projectionUniformLocation, modelviewUniformLocation, shadedUniformLocation, secondarycolorsUniformLocation;
 };
 
 class QMDLRenderer : public QOpenGLWidget

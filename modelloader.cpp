@@ -3,6 +3,58 @@
 
 using byte = uint8_t;
 
+constexpr int32_t QIM_MAGIC = (('M'<<24)+('I'<<16)+('T'<<8)+'Q');
+
+static inline ModelData constructBlankModel()
+{
+	ModelData model;
+	model.frames.emplace_back("Frame 1");
+	return model;
+}
+
+/*static*/ const ModelData ModelData::blankModel = constructBlankModel();
+
+void SaveQIM(const ModelData &model, QString filename)
+{
+    QFile file(filename);
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        throw std::runtime_error("bad");
+
+    QDataStream stream(&file);
+	stream.setVersion(QDataStream::Version::Qt_6_5);
+
+	stream << QIM_MAGIC;
+	stream << QIM_VERSION;
+
+	QDataSync sync(QIM_VERSION, stream, false);
+
+	const_cast<ModelData &>(model).sync(sync);
+}
+
+std::unique_ptr<ModelData> LoadQIM(QString filename)
+{
+    QFile file(filename);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+        throw std::runtime_error("bad");
+	
+    QDataStream stream(&file);
+	stream.setVersion(QDataStream::Version::Qt_6_5);
+
+	int32_t v;
+
+	stream >> v;
+	stream >> v;
+
+	QDataSync sync(v, stream, true);
+
+	ModelData data;
+	data.sync(sync);
+
+	return std::make_unique<ModelData>(std::move(data));
+}
+
 constexpr QVector3D anorms[] = {
 	{-0.525731f, 0.000000f, 0.850651f}, 
 	{-0.442863f, 0.238856f, 0.864188f}, 
@@ -168,6 +220,28 @@ constexpr QVector3D anorms[] = {
 	{-0.688191f, -0.587785f, -0.425325f}
 };
 
+static uint8_t CompressNormal(const QVector3D &v)
+{
+	float bestdot = 0;
+	const QVector3D *bestnorm = nullptr;
+
+	for (auto &norm : anorms)
+	{
+		float dot = QVector3D::dotProduct(v, norm);
+
+		if (bestnorm && dot <= bestdot)
+			continue;
+
+		bestdot = dot;
+		bestnorm = &norm;
+	}
+
+	if (!bestnorm)
+		throw std::runtime_error("fatal");
+
+	return bestnorm - anorms;
+}
+
 /*
 ==============
 LoadPCX
@@ -194,7 +268,7 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
     pcx_t   pcx;
     int     x, y;
     uint8_t dataByte, runLength;
-    byte    *pix, *raw_pix;
+    byte    *raw_pix;
 
     //
     // parse the PCX file
@@ -222,10 +296,7 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 	raw_data.data.resize(skin.width * skin.height);
 	std::vector<uint8_t> &palette = raw_data.palette.emplace(std::vector<uint8_t>(static_cast<size_t>(768)));
 
-	skin.image = QImage(skin.width, skin.height, QImage::Format_ARGB32);
-
 	raw_pix = raw_data.data.data();
-	pix = skin.image.bits();
 
 	skinStream.device()->seek(skinStream.device()->size() - 768);
 
@@ -233,7 +304,7 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 
 	skinStream.device()->seek(sizeof(pcx_t));
 
-    for (y=0 ; y<=pcx.ymax ; y++, pix += (pcx.xmax + 1) * 4, raw_pix += (pcx.xmax + 1))
+    for (y=0 ; y<=pcx.ymax ; y++, raw_pix += (pcx.xmax + 1))
     {
         for (x=0; x<=pcx.xmax ; )
         {
@@ -249,10 +320,6 @@ bool LoadPCX (QDataStream &skinStream, ModelSkin &skin)
 
             while(runLength-- > 0)
 			{
-                pix[(x * 4) + 2] = palette[(dataByte * 3) + 0];
-                pix[(x * 4) + 1] = palette[(dataByte * 3) + 1];
-                pix[(x * 4) + 0] = palette[(dataByte * 3) + 2];
-				pix[(x * 4) + 3] = 0xFF;
 				raw_pix[x] = dataByte;
 				x++;
 			}
@@ -296,8 +363,8 @@ struct dtrivertx_t
 
 struct daliasframe_t
 {
-	std::array<float, 3> scale;	// multiply byte verts by this
-	std::array<float, 3> translate;	// then add this
+	QVector3D            scale;	// multiply byte verts by this
+	QVector3D            translate;	// then add this
 	char		         name[MD2_MAX_FRAMENAME];	// frame name from grabbing
 };
 
@@ -540,7 +607,7 @@ void SaveMD2(const ModelData &model, QString filename)
 				(uint8_t) std::clamp(rint((vert.position[1] - frame_header.translate[1]) / frame_header.scale[1]), 0.f, 255.f),
 				(uint8_t) std::clamp(rint((vert.position[2] - frame_header.translate[2]) / frame_header.scale[2]), 0.f, 255.f)
 			};
-			v.lightnormalindex = 0;
+			v.lightnormalindex = CompressNormal(vert.normal);
 
 			stream << v.v[0] << v.v[1] << v.v[2];
 			stream << v.lightnormalindex;
@@ -703,6 +770,358 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 	return std::make_unique<ModelData>(std::move(data));
 }
 
+// Quake 1 MDL
+
+#define ALIAS_VERSION	6
+
+#define ALIAS_ONSEAM				0x0020
+
+// must match definition in spritegn.h
+enum synctype_t {ST_SYNC=0, ST_RAND };
+
+enum aliasframetype_t { ALIAS_SINGLE=0, ALIAS_GROUP };
+
+enum aliasskintype_t { ALIAS_SKIN_SINGLE=0, ALIAS_SKIN_GROUP };
+
+using vec3_t = QVector3D;
+
+struct mdl_t {
+	int			ident;
+	int			version;
+	vec3_t		scale;
+	vec3_t		scale_origin;
+	float		boundingradius;
+	vec3_t		eyeposition;
+	int			numskins;
+	int			skinwidth;
+	int			skinheight;
+	int			numverts;
+	int			numtris;
+	int			numframes;
+	synctype_t	synctype;
+	int			flags;
+	float		size;
+};
+
+// TODO: could be shorts
+
+struct stvert_t {
+	int		onseam;
+	int		s;
+	int		t;
+};
+
+struct dmdltriangle_t {
+	int					facesfront;
+	int					vertindex[3];
+};
+
+constexpr int DT_FACES_FRONT				= 0x0010;
+
+using trivertx_t = dtrivertx_t;
+
+struct dmdlaliasframe_t {
+	trivertx_t	bboxmin;	// lightnormal isn't used
+	trivertx_t	bboxmax;	// lightnormal isn't used
+	char		name[16];	// frame name from grabbing
+};
+
+struct daliasgroup_t {
+	int			numframes;
+	trivertx_t	bboxmin;	// lightnormal isn't used
+	trivertx_t	bboxmax;	// lightnormal isn't used
+};
+
+struct daliasskingroup_t {
+	int			numskins;
+};
+
+struct daliasinterval_t {
+	float	interval;
+};
+
+struct daliasskininterval_t {
+	float	interval;
+};
+
+struct daliasframetype_t {
+	aliasframetype_t	type;
+};
+
+struct daliasskintype_t
+{
+	aliasskintype_t	type;
+};
+
+constexpr int32_t IDPOLYHEADER	= (('O'<<24)+('P'<<16)+('D'<<8)+'I'); // little-endian "IDPO"
+
+/* C:\Users\Paril\Desktop\palette.lmp (2023-12-20 6:06:19 AM)
+   StartOffset(h): 00000000, EndOffset(h): 000002FF, Length(h): 00000300 */
+
+constexpr uint8_t quakePalette[768] = {
+	0x00, 0x00, 0x00, 0x0F, 0x0F, 0x0F, 0x1F, 0x1F, 0x1F, 0x2F, 0x2F, 0x2F,
+	0x3F, 0x3F, 0x3F, 0x4B, 0x4B, 0x4B, 0x5B, 0x5B, 0x5B, 0x6B, 0x6B, 0x6B,
+	0x7B, 0x7B, 0x7B, 0x8B, 0x8B, 0x8B, 0x9B, 0x9B, 0x9B, 0xAB, 0xAB, 0xAB,
+	0xBB, 0xBB, 0xBB, 0xCB, 0xCB, 0xCB, 0xDB, 0xDB, 0xDB, 0xEB, 0xEB, 0xEB,
+	0x0F, 0x0B, 0x07, 0x17, 0x0F, 0x0B, 0x1F, 0x17, 0x0B, 0x27, 0x1B, 0x0F,
+	0x2F, 0x23, 0x13, 0x37, 0x2B, 0x17, 0x3F, 0x2F, 0x17, 0x4B, 0x37, 0x1B,
+	0x53, 0x3B, 0x1B, 0x5B, 0x43, 0x1F, 0x63, 0x4B, 0x1F, 0x6B, 0x53, 0x1F,
+	0x73, 0x57, 0x1F, 0x7B, 0x5F, 0x23, 0x83, 0x67, 0x23, 0x8F, 0x6F, 0x23,
+	0x0B, 0x0B, 0x0F, 0x13, 0x13, 0x1B, 0x1B, 0x1B, 0x27, 0x27, 0x27, 0x33,
+	0x2F, 0x2F, 0x3F, 0x37, 0x37, 0x4B, 0x3F, 0x3F, 0x57, 0x47, 0x47, 0x67,
+	0x4F, 0x4F, 0x73, 0x5B, 0x5B, 0x7F, 0x63, 0x63, 0x8B, 0x6B, 0x6B, 0x97,
+	0x73, 0x73, 0xA3, 0x7B, 0x7B, 0xAF, 0x83, 0x83, 0xBB, 0x8B, 0x8B, 0xCB,
+	0x00, 0x00, 0x00, 0x07, 0x07, 0x00, 0x0B, 0x0B, 0x00, 0x13, 0x13, 0x00,
+	0x1B, 0x1B, 0x00, 0x23, 0x23, 0x00, 0x2B, 0x2B, 0x07, 0x2F, 0x2F, 0x07,
+	0x37, 0x37, 0x07, 0x3F, 0x3F, 0x07, 0x47, 0x47, 0x07, 0x4B, 0x4B, 0x0B,
+	0x53, 0x53, 0x0B, 0x5B, 0x5B, 0x0B, 0x63, 0x63, 0x0B, 0x6B, 0x6B, 0x0F,
+	0x07, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x17, 0x00, 0x00, 0x1F, 0x00, 0x00,
+	0x27, 0x00, 0x00, 0x2F, 0x00, 0x00, 0x37, 0x00, 0x00, 0x3F, 0x00, 0x00,
+	0x47, 0x00, 0x00, 0x4F, 0x00, 0x00, 0x57, 0x00, 0x00, 0x5F, 0x00, 0x00,
+	0x67, 0x00, 0x00, 0x6F, 0x00, 0x00, 0x77, 0x00, 0x00, 0x7F, 0x00, 0x00,
+	0x13, 0x13, 0x00, 0x1B, 0x1B, 0x00, 0x23, 0x23, 0x00, 0x2F, 0x2B, 0x00,
+	0x37, 0x2F, 0x00, 0x43, 0x37, 0x00, 0x4B, 0x3B, 0x07, 0x57, 0x43, 0x07,
+	0x5F, 0x47, 0x07, 0x6B, 0x4B, 0x0B, 0x77, 0x53, 0x0F, 0x83, 0x57, 0x13,
+	0x8B, 0x5B, 0x13, 0x97, 0x5F, 0x1B, 0xA3, 0x63, 0x1F, 0xAF, 0x67, 0x23,
+	0x23, 0x13, 0x07, 0x2F, 0x17, 0x0B, 0x3B, 0x1F, 0x0F, 0x4B, 0x23, 0x13,
+	0x57, 0x2B, 0x17, 0x63, 0x2F, 0x1F, 0x73, 0x37, 0x23, 0x7F, 0x3B, 0x2B,
+	0x8F, 0x43, 0x33, 0x9F, 0x4F, 0x33, 0xAF, 0x63, 0x2F, 0xBF, 0x77, 0x2F,
+	0xCF, 0x8F, 0x2B, 0xDF, 0xAB, 0x27, 0xEF, 0xCB, 0x1F, 0xFF, 0xF3, 0x1B,
+	0x0B, 0x07, 0x00, 0x1B, 0x13, 0x00, 0x2B, 0x23, 0x0F, 0x37, 0x2B, 0x13,
+	0x47, 0x33, 0x1B, 0x53, 0x37, 0x23, 0x63, 0x3F, 0x2B, 0x6F, 0x47, 0x33,
+	0x7F, 0x53, 0x3F, 0x8B, 0x5F, 0x47, 0x9B, 0x6B, 0x53, 0xA7, 0x7B, 0x5F,
+	0xB7, 0x87, 0x6B, 0xC3, 0x93, 0x7B, 0xD3, 0xA3, 0x8B, 0xE3, 0xB3, 0x97,
+	0xAB, 0x8B, 0xA3, 0x9F, 0x7F, 0x97, 0x93, 0x73, 0x87, 0x8B, 0x67, 0x7B,
+	0x7F, 0x5B, 0x6F, 0x77, 0x53, 0x63, 0x6B, 0x4B, 0x57, 0x5F, 0x3F, 0x4B,
+	0x57, 0x37, 0x43, 0x4B, 0x2F, 0x37, 0x43, 0x27, 0x2F, 0x37, 0x1F, 0x23,
+	0x2B, 0x17, 0x1B, 0x23, 0x13, 0x13, 0x17, 0x0B, 0x0B, 0x0F, 0x07, 0x07,
+	0xBB, 0x73, 0x9F, 0xAF, 0x6B, 0x8F, 0xA3, 0x5F, 0x83, 0x97, 0x57, 0x77,
+	0x8B, 0x4F, 0x6B, 0x7F, 0x4B, 0x5F, 0x73, 0x43, 0x53, 0x6B, 0x3B, 0x4B,
+	0x5F, 0x33, 0x3F, 0x53, 0x2B, 0x37, 0x47, 0x23, 0x2B, 0x3B, 0x1F, 0x23,
+	0x2F, 0x17, 0x1B, 0x23, 0x13, 0x13, 0x17, 0x0B, 0x0B, 0x0F, 0x07, 0x07,
+	0xDB, 0xC3, 0xBB, 0xCB, 0xB3, 0xA7, 0xBF, 0xA3, 0x9B, 0xAF, 0x97, 0x8B,
+	0xA3, 0x87, 0x7B, 0x97, 0x7B, 0x6F, 0x87, 0x6F, 0x5F, 0x7B, 0x63, 0x53,
+	0x6B, 0x57, 0x47, 0x5F, 0x4B, 0x3B, 0x53, 0x3F, 0x33, 0x43, 0x33, 0x27,
+	0x37, 0x2B, 0x1F, 0x27, 0x1F, 0x17, 0x1B, 0x13, 0x0F, 0x0F, 0x0B, 0x07,
+	0x6F, 0x83, 0x7B, 0x67, 0x7B, 0x6F, 0x5F, 0x73, 0x67, 0x57, 0x6B, 0x5F,
+	0x4F, 0x63, 0x57, 0x47, 0x5B, 0x4F, 0x3F, 0x53, 0x47, 0x37, 0x4B, 0x3F,
+	0x2F, 0x43, 0x37, 0x2B, 0x3B, 0x2F, 0x23, 0x33, 0x27, 0x1F, 0x2B, 0x1F,
+	0x17, 0x23, 0x17, 0x0F, 0x1B, 0x13, 0x0B, 0x13, 0x0B, 0x07, 0x0B, 0x07,
+	0xFF, 0xF3, 0x1B, 0xEF, 0xDF, 0x17, 0xDB, 0xCB, 0x13, 0xCB, 0xB7, 0x0F,
+	0xBB, 0xA7, 0x0F, 0xAB, 0x97, 0x0B, 0x9B, 0x83, 0x07, 0x8B, 0x73, 0x07,
+	0x7B, 0x63, 0x07, 0x6B, 0x53, 0x00, 0x5B, 0x47, 0x00, 0x4B, 0x37, 0x00,
+	0x3B, 0x2B, 0x00, 0x2B, 0x1F, 0x00, 0x1B, 0x0F, 0x00, 0x0B, 0x07, 0x00,
+	0x00, 0x00, 0xFF, 0x0B, 0x0B, 0xEF, 0x13, 0x13, 0xDF, 0x1B, 0x1B, 0xCF,
+	0x23, 0x23, 0xBF, 0x2B, 0x2B, 0xAF, 0x2F, 0x2F, 0x9F, 0x2F, 0x2F, 0x8F,
+	0x2F, 0x2F, 0x7F, 0x2F, 0x2F, 0x6F, 0x2F, 0x2F, 0x5F, 0x2B, 0x2B, 0x4F,
+	0x23, 0x23, 0x3F, 0x1B, 0x1B, 0x2F, 0x13, 0x13, 0x1F, 0x0B, 0x0B, 0x0F,
+	0x2B, 0x00, 0x00, 0x3B, 0x00, 0x00, 0x4B, 0x07, 0x00, 0x5F, 0x07, 0x00,
+	0x6F, 0x0F, 0x00, 0x7F, 0x17, 0x07, 0x93, 0x1F, 0x07, 0xA3, 0x27, 0x0B,
+	0xB7, 0x33, 0x0F, 0xC3, 0x4B, 0x1B, 0xCF, 0x63, 0x2B, 0xDB, 0x7F, 0x3B,
+	0xE3, 0x97, 0x4F, 0xE7, 0xAB, 0x5F, 0xEF, 0xBF, 0x77, 0xF7, 0xD3, 0x8B,
+	0xA7, 0x7B, 0x3B, 0xB7, 0x9B, 0x37, 0xC7, 0xC3, 0x37, 0xE7, 0xE3, 0x57,
+	0x7F, 0xBF, 0xFF, 0xAB, 0xE7, 0xFF, 0xD7, 0xFF, 0xFF, 0x67, 0x00, 0x00,
+	0x8B, 0x00, 0x00, 0xB3, 0x00, 0x00, 0xD7, 0x00, 0x00, 0xFF, 0x00, 0x00,
+	0xFF, 0xF3, 0x93, 0xFF, 0xF7, 0xC7, 0xFF, 0xFF, 0xFF, 0x9F, 0x5B, 0x53
+};
+
+std::unique_ptr<ModelData> LoadMDL(QString filename)
+{
+    QFile file(filename);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+        throw std::runtime_error("bad");
+
+    QDataStream stream(&file);
+    stream.setByteOrder(QDataStream::LittleEndian);
+	stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+
+	mdl_t header;
+	stream.readRawData(reinterpret_cast<char *>(&header), sizeof(header));
+
+	ModelData data;
+
+	int32_t group_id = 0;
+
+	auto parseSingleSkin = [&stream, &header](ModelSkin &skin) {
+		skin.width = header.skinwidth;
+		skin.height = header.skinheight;
+
+		SkinPaletteData skindata;
+
+		skindata.data.resize(header.skinwidth * header.skinheight);
+		stream.readRawData(reinterpret_cast<char *>(skindata.data.data()), skindata.data.size());
+		skindata.palette = std::vector<uint8_t>(&quakePalette[0], &quakePalette[sizeof(quakePalette)]);
+
+		skin.raw_data = std::move(skindata);
+	};
+
+	// skins may grow with groups
+	data.skins.reserve(header.numskins);
+
+	for (int i = 0; i < header.numskins; i++)
+	{
+		daliasskintype_t type;
+		stream >> (int32_t &) type.type;
+
+		if (type.type == ALIAS_SKIN_SINGLE)
+		{
+			auto &outSkin = data.skins.emplace_back();
+			parseSingleSkin(outSkin);
+		}
+		else
+		{
+			daliasskingroup_t group;
+			stream >> group.numskins;
+
+			size_t frame_start = data.skins.size();
+			
+			for (int f = 0; f < group.numskins; f++)
+			{
+				auto &outskin = data.skins.emplace_back();
+
+				daliasskininterval_t interval;
+				stream >> interval.interval;
+
+				outskin.q1_data = { group_id, interval.interval };
+			}
+
+			group_id++;
+			
+			for (int f = 0; f < group.numskins; f++)
+			{
+				auto &outskin = data.skins[frame_start + f];
+				parseSingleSkin(outskin);
+			}
+		}
+	}
+
+	std::vector<stvert_t> stverts;
+	stverts.resize(header.numverts);
+	
+	data.texcoords.resize(header.numverts);
+	data.vertices.resize(header.numverts);
+
+	for (int i = 0; i < header.numverts; i++)
+	{
+		auto &st = stverts[i];
+		stream >> st.onseam;
+		stream >> st.s;
+		stream >> st.t;
+
+		auto &v = data.texcoords[i];
+		v.pos = { (float) st.s / header.skinwidth, (float) st.t / header.skinheight };
+	}
+
+	data.triangles.resize(header.numtris);
+
+	for (int i = 0; i < header.numtris; i++)
+	{
+		dmdltriangle_t t;
+		stream >> t.facesfront;
+		stream >> t.vertindex[0] >> t.vertindex[1] >> t.vertindex[2];
+
+		auto &tri = data.triangles[i];
+		tri.vertices = { (uint32_t) t.vertindex[0], (uint32_t) t.vertindex[1], (uint32_t) t.vertindex[2] };
+
+		if (!t.facesfront)
+		{
+			for (int x = 0; x < 3; x++)
+			{
+				if (stverts[tri.vertices[x]].onseam)
+				{
+					tri.texcoords[x] = data.texcoords.size();
+					data.texcoords.emplace_back(
+						QVector2D { ((float) stverts[tri.vertices[x]].s / header.skinwidth) + 0.5f, (float) stverts[tri.vertices[x]].t / header.skinheight }
+					);
+				}
+				else
+					tri.texcoords[x] = tri.vertices[x];
+			}
+		}
+		else
+			tri.texcoords = tri.vertices;
+	}
+
+	// framegroups can add more, technically
+	data.frames.reserve(header.numframes);
+
+	group_id = 0;
+
+	auto parseSingleFrame = [&stream, &header](ModelFrame &outframe) {
+		dmdlaliasframe_t frame;
+		stream >> frame.bboxmin.v[0] >> frame.bboxmin.v[1] >> frame.bboxmin.v[2];
+		stream >> frame.bboxmin.lightnormalindex;
+		stream >> frame.bboxmax.v[0] >> frame.bboxmax.v[1] >> frame.bboxmax.v[2];
+		stream >> frame.bboxmax.lightnormalindex;
+
+		stream.readRawData(frame.name, sizeof(frame.name));
+		frame.name[sizeof(frame.name) - 1] = 0;
+
+		outframe.name = frame.name;
+		outframe.vertices.resize(header.numverts);
+
+		for (int x = 0; x < header.numverts; x++)
+		{
+			dtrivertx_t v;
+			stream >> v.v[0] >> v.v[1] >> v.v[2];
+			stream >> v.lightnormalindex;
+
+			auto &vert = outframe.vertices[x];
+
+			vert.position = {
+				(v.v[0] * header.scale[0]) + header.scale_origin[0],
+				(v.v[1] * header.scale[1]) + header.scale_origin[1],
+				(v.v[2] * header.scale[2]) + header.scale_origin[2]
+			};
+			vert.normal = anorms[v.lightnormalindex];
+		}
+	};
+
+	for (int i = 0; i < header.numframes; i++)
+	{
+		aliasframetype_t type;
+		stream >> (int32_t &) type;
+
+		if (type == ALIAS_SINGLE)
+		{
+			auto &outframe = data.frames.emplace_back();
+			parseSingleFrame(outframe);
+		}
+		else
+		{
+			daliasgroup_t group;
+			stream >> group.numframes;
+			stream >> group.bboxmin.v[0] >> group.bboxmin.v[1] >> group.bboxmin.v[2];
+			stream >> group.bboxmin.lightnormalindex;
+			stream >> group.bboxmax.v[0] >> group.bboxmax.v[1] >> group.bboxmax.v[2];
+			stream >> group.bboxmax.lightnormalindex;
+
+			size_t frame_start = data.frames.size();
+			
+			for (int f = 0; f < group.numframes; f++)
+			{
+				auto &outframe = data.frames.emplace_back();
+
+				daliasinterval_t interval;
+				stream >> interval.interval;
+
+				outframe.q1_data = { group_id, interval.interval };
+			}
+
+			group_id++;
+			
+			for (int f = 0; f < group.numframes; f++)
+			{
+				auto &outframe = data.frames[frame_start + f];
+				parseSingleFrame(outframe);
+			}
+		}
+	}
+	
+	return std::make_unique<ModelData>(std::move(data));
+}
+
 /*static*/ std::unique_ptr<ModelData> ModelLoader::load(QFileInfo file, QMimeType type)
 {
 	std::unique_ptr<ModelData> model;
@@ -711,13 +1130,39 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 	    model = LoadMD2(file.filePath());
 	else if (type.name() == "x-qtmdl/md2f")
 	    model = LoadMD2F(file.filePath());
+	else if (type.name() == "x-qtmdl/mdl")
+	    model = LoadMDL(file.filePath());
+	else if (type.name() == "x-qtmdl/qim")
+	    model = LoadQIM(file.filePath());
 	else
 		throw std::runtime_error("invalid file type");
 
 	// post-load operations
 	ModelMutator mutator{model.get()};
 	if (!model->skins.empty())
+	{
 		mutator.setSelectedSkin(0);
+
+		// load skin pixels
+		// TODO: this should be moved to GL area I think
+		for (auto &skin : model->skins)
+		{
+			// already loaded
+			if (skin.image.width())
+				continue;
+
+			skin.image = QImage(skin.width, skin.height, QImage::Format_ARGB32);
+			byte *bits = skin.image.bits();
+
+			for (size_t i = 0; i < skin.width * skin.height; i++, bits += 4)
+			{
+				bits[2] = skin.raw_data->palette->at((skin.raw_data->data[i] * 3) + 0);
+				bits[1] = skin.raw_data->palette->at((skin.raw_data->data[i] * 3) + 1);
+				bits[0] = skin.raw_data->palette->at((skin.raw_data->data[i] * 3) + 2);
+				bits[3] = 0xFF;
+			}
+		}
+	}
 
 	return model;
 }
@@ -726,6 +1171,8 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 {
 	if (type.name() == "x-qtmdl/md2")
 		SaveMD2(model, file.filePath());
+	else if (type.name() == "x-qtmdl/qim")
+		SaveQIM(model, file.filePath());
 	else
 		throw std::runtime_error("invalid file type");
 }

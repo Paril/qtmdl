@@ -1,19 +1,34 @@
 <?xml version="1.0"?>
 <mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
-  <mime-type type="x-qtmdl/md2">
-    <comment>MD2 Model</comment>
-    <magic priority="50">
-      <match type="string" offset="0" value="IDP2"/>
-      <match type="little32" offset="4" value="8"/>
-    </magic>
-    <glob pattern="*.md2"/>
-  </mime-type>
-  <mime-type type="x-qtmdl/md2f">
-    <comment>MD2F Model</comment>
-    <magic priority="50">
-      <match type="string" offset="0" value="IDP2"/>
-      <match type="little32" offset="4" value="9"/>
-    </magic>
-    <glob pattern="*.md2f"/>
-  </mime-type>
+	<mime-type type="x-qtmdl/md2">
+		<comment>Quake II MD2 Model</comment>
+		<magic priority="50">
+			<match type="string" offset="0" value="IDP2"/>
+			<match type="little32" offset="4" value="8"/>
+		</magic>
+		<glob pattern="*.md2"/>
+	</mime-type>
+	<mime-type type="x-qtmdl/md2f">
+		<comment>Quake II MD2F Model</comment>
+		<magic priority="50">
+			<match type="string" offset="0" value="IDP2"/>
+			<match type="little32" offset="4" value="9"/>
+		</magic>
+		<glob pattern="*.md2f"/>
+	</mime-type>
+	<mime-type type="x-qtmdl/mdl">
+		<comment>Quake MDL Model</comment>
+		<magic priority="50">
+			<match type="string" offset="0" value="IDPO"/>
+			<match type="little32" offset="4" value="6"/>
+		</magic>
+		<glob pattern="*.mdl"/>
+	</mime-type>
+	<mime-type type="x-qtmdl/qim">
+		<comment>QTMDL Intermediate Model</comment>
+		<magic priority="50">
+			<match type="string" offset="0" value="MITQ"/>
+		</magic>
+		<glob pattern="*.qim"/>
+	</mime-type>
 </mime-info>

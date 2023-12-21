@@ -12,6 +12,7 @@
 #include "editortypes.h"
 #include <limits>
 #include <utility>
+#include <QDataStream>
 
 struct BoundingBox
 {
@@ -50,24 +51,178 @@ struct BoundingBox
     }
 };
 
+constexpr int32_t QIM_VERSION = 1;
+
+template<typename T, typename S>
+concept IsSyncable = requires(S &s, T t)
+{
+    t.sync(s);
+};
+
+template<typename T>
+concept IsQDataStreamCompatible = requires(QDataStream &s, T t)
+{
+    s << t;
+    s >> t;
+};
+
+struct QDataSync
+{
+    int32_t version;
+    QDataStream &stream;
+    bool read;
+
+    inline QDataSync(int32_t version, QDataStream &stream, bool read) :
+        version(version),
+        stream(stream),
+        read(read)
+    {
+    }
+
+    template<typename ...T>
+    inline QDataSync &sync(T&... args)
+    {
+        (syncInternal(args), ... );
+        return *this;
+    }
+
+private:
+    template<IsSyncable<QDataSync> T>
+    inline void syncInternal(T &arg)
+    {
+        arg.sync(*this);
+    }
+
+    template<IsQDataStreamCompatible T>
+    inline void syncInternal(T &arg)
+    {
+        if (!read)
+            stream << arg;
+        else
+            stream >> arg;
+    }
+
+    inline void syncInternal(std::string &str)
+    {
+        if (!read)
+        {
+            stream << str.size();
+            stream.writeRawData(str.data(), str.size());
+        }
+        else
+        {
+            size_t size;
+            stream >> size;
+
+            str.resize(size, '\0');
+            stream.readRawData(str.data(), size);
+        }
+    }
+
+    template<typename T, size_t N>
+    inline void syncInternal(std::array<T, N> &array)
+    {
+        for (auto &v : array)
+            syncInternal(v);
+    }
+
+    template<typename T>
+    inline void syncInternal(std::optional<T> &opt)
+    {
+        if (!read)
+        {
+            stream << opt.has_value();
+
+            if (opt.has_value())
+                syncInternal(opt.value());
+        }
+        else
+        {
+            bool has_value;
+            stream >> has_value;
+
+            if (!has_value)
+                opt = std::nullopt;
+            else
+            {
+                T value;
+                syncInternal(value);
+                opt = value;
+            }
+        }
+    }
+
+    template<typename T>
+    inline void syncInternal(std::vector<T> &vec)
+    {
+        if (!read)
+        {
+            stream << vec.size();
+
+            for (auto &v : vec)
+                syncInternal(v);
+        }
+        else
+        {
+            size_t n;
+            stream >> n;
+            vec.resize(n);
+
+            for (auto &v : vec)
+                syncInternal(v);
+        }
+    }
+};
+
 struct ModelFrameVertex
 {
-    QVector3D   position;
-    QVector3D   normal;
+    QVector3D position;
+    QVector3D normal;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(position, normal);
+        return stream;
+    }
 };
 
 struct ModelTriangle
 {
 	std::array<uint32_t, 3>	vertices;
-    bool                    selectedFace = false;
 	std::array<uint32_t, 3>	texcoords;
+    bool                    selectedFace = false;
     bool                    selectedUV = false;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(vertices, texcoords, selectedFace, selectedUV);
+        return stream;
+    }
+};
+
+struct Q1GroupData
+{
+    int32_t     group;
+    float       interval;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(group, interval);
+        return stream;
+    }
 };
 
 struct ModelFrame
 {
     std::string					  name;
     std::vector<ModelFrameVertex> vertices;
+    std::optional<Q1GroupData>    q1_data;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(name, q1_data, vertices);
+        return stream;
+    }
 
     inline BoundingBox bounds() const
     {
@@ -88,29 +243,55 @@ struct SkinPaletteData
 {
     std::optional<std::vector<uint8_t>> palette;
     std::vector<uint8_t>                data;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(palette, data);
+        return stream;
+    }
 };
 
 struct ModelSkin
 {
     std::string                    name;
-    int                            width, height;
+    int32_t                        width, height;
 
     // if we have an 8-bit skin, the palette + raw data
     // is stored here.
     std::optional<SkinPaletteData> raw_data;
     // "cooked" 32-bit image
     QImage                         image;
+
+    std::optional<Q1GroupData>     q1_data;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(name, width, height, raw_data, image, q1_data);
+        return stream;
+    }
 };
 
 struct ModelVertex
 {
     bool selected = false;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(selected);
+        return stream;
+    }
 };
 
 struct ModelTexCoord
 {
     QVector2D pos;
     bool      selected = false;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(pos, selected);
+        return stream;
+    }
 };
 
 // model data contains all of the data 'saved' with
@@ -123,6 +304,7 @@ private:
 
 public:
     ModelData(ModelData &&) = default;
+    ModelData() = default;
 
     // model data
     // nb: a model will always have at least one frame.
@@ -138,6 +320,12 @@ public:
     // an unselected skin is technically valid
     // but will only occur if the model has zero skins.
     std::optional<int32_t>  selectedSkin = std::nullopt;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(frames, texcoords, triangles, skins, vertices, selectedFrame, selectedSkin);
+        return stream;
+    }
 
     // return a fixed set of texture coordinate indices that are
     // currently considered "selected" - that is to say, they will
@@ -221,10 +409,7 @@ public:
         return bounds;
     }
 
-    constexpr ModelData() :
-        frames({ { "Frame 1" } })
-    {
-    }
+    static const ModelData blankModel;
 };
 
 class ModelMutator

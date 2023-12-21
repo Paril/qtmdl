@@ -140,9 +140,10 @@ bool MainWindow::getSyncSelection() const
 	return this->_ui->actionSync_Skin_Selection->isChecked();
 }
 
-void MainWindow::setSyncSelection(bool value) const
+void MainWindow::setSyncSelection(bool value)
 {
 	this->_ui->actionSync_Skin_Selection->setChecked(value);
+	activeModelMutator().syncSelection3D();
 }
 
 RenderParameters MainWindow::getRenderParameters(bool is_2d) const
@@ -282,8 +283,10 @@ std::unique_ptr<QFileDialog> MainWindow::makeFileDialog(QString title, QFileDial
 	dlg->setAcceptMode(accept);
 
 	dlg->setMimeTypeFilters({
+		"x-qtmdl/mdl",
 		"x-qtmdl/md2",
 		"x-qtmdl/md2f",
+		"x-qtmdl/qim",
 		"application/octet-stream"
 	});
 
@@ -328,7 +331,7 @@ void MainWindow::exportClicked()
 
 void MainWindow::frameCountChanged()
 {
-	int maxFrames = (int) (_activeModel->frames.size() - 1);
+	int maxFrames = (int) (activeModel().frames.size() - 1);
 
 	this->_ui->horizontalSlider->setMaximum(maxFrames);
 	this->_ui->spinBox_2->setMaximum(maxFrames);
@@ -343,8 +346,8 @@ void MainWindow::frameChanged()
 
 	updateRenders();
 
-	this->_ui->label_5->setText(QString::asprintf("%i", _activeModel->selectedFrame));
+	this->_ui->label_5->setText(QString::asprintf("%i", activeModel().selectedFrame));
 
-	if (_activeModel->frames.size())
-		this->_ui->label_frameName->setText(QString::fromStdString(_activeModel->frames[_activeModel->selectedFrame].name));
+	if (activeModel().frames.size())
+		this->_ui->label_frameName->setText(QString::fromStdString(activeModel().frames[activeModel().selectedFrame].name));
 }

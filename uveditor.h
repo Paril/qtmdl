@@ -50,7 +50,7 @@ public:
     bool getModifyX() const;
     bool getModifyY() const;
     bool getSyncSelection() const;
-    void setSyncSelection(bool value) const;
+    void setSyncSelection(bool value);
 
     void resetZoom();
     void modelLoaded();

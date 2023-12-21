@@ -15,6 +15,7 @@ constexpr GLuint ATTRIB_POSITION = 0;
 constexpr GLuint ATTRIB_TEXCOORD = 1;
 constexpr GLuint ATTRIB_COLOR = 2;
 constexpr GLuint ATTRIB_NORMAL = 3;
+constexpr GLuint ATTRIB_COLOR_SECONDARY = 4;
 
 struct GPUAxisData
 {
@@ -193,6 +194,7 @@ void QMDLRenderer::initializeGL()
 
     glUniform1i(glGetUniformLocation(_modelProgram.program, "u_texture"), 0);
     glUniform1i(_modelProgram.shadedUniformLocation = glGetUniformLocation(_modelProgram.program, "u_shaded"), 1);
+    glUniform1i(_modelProgram.secondarycolorsUniformLocation = glGetUniformLocation(_modelProgram.program, "u_secondarycolors"), 0);
 
     _simpleProgram.program = createProgram(
         createShader(GL_VERTEX_SHADER, loadShader("simple.vert.glsl")->c_str()),
@@ -211,6 +213,7 @@ void QMDLRenderer::initializeGL()
     glEnableVertexAttribArray(ATTRIB_POSITION);
     glDisableVertexAttribArray(ATTRIB_TEXCOORD);
     glDisableVertexAttribArray(ATTRIB_COLOR);
+    glDisableVertexAttribArray(ATTRIB_COLOR_SECONDARY);
     glDisableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(QVector3D), nullptr);
         
@@ -223,6 +226,7 @@ void QMDLRenderer::initializeGL()
     glEnableVertexAttribArray(ATTRIB_POSITION);
     glDisableVertexAttribArray(ATTRIB_TEXCOORD);
     glEnableVertexAttribArray(ATTRIB_COLOR);
+    glDisableVertexAttribArray(ATTRIB_COLOR_SECONDARY);
     glDisableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, position)));
     glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, color)));
@@ -239,10 +243,12 @@ void QMDLRenderer::initializeGL()
     glEnableVertexAttribArray(ATTRIB_POSITION);
     glEnableVertexAttribArray(ATTRIB_TEXCOORD);
     glEnableVertexAttribArray(ATTRIB_COLOR);
+    glEnableVertexAttribArray(ATTRIB_COLOR_SECONDARY);
     glEnableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
     glVertexAttribPointer(ATTRIB_TEXCOORD, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
     glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, color)));
+    glVertexAttribPointer(ATTRIB_COLOR_SECONDARY, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, color_secondary)));
     glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_FLOAT, false, 0, nullptr);
 
@@ -255,6 +261,7 @@ void QMDLRenderer::initializeGL()
     glDisableVertexAttribArray(ATTRIB_TEXCOORD);
     glEnableVertexAttribArray(ATTRIB_COLOR);
     glDisableVertexAttribArray(ATTRIB_NORMAL);
+    glDisableVertexAttribArray(ATTRIB_COLOR_SECONDARY);
     glVertexAttribPointer(ATTRIB_POSITION, 3, GL_FLOAT, false, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, position)));
     glVertexAttribPointer(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, color)));
 }
@@ -593,6 +600,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     }
 
     glUseProgram(_modelProgram.program);
+    glUniform1i(_modelProgram.secondarycolorsUniformLocation, is_2d);
     glUniformMatrix4fv(_modelProgram.projectionUniformLocation, 1, false, projection.data());
 
     if (_dragging && (_focusedQuadrant == QuadrantFocus::TopLeft || _focusedQuadrant == QuadrantFocus::TopRight ||
@@ -847,6 +855,7 @@ GLuint QMDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
     glBindAttribLocation(program, ATTRIB_TEXCOORD, "i_texcoord");
     glBindAttribLocation(program, ATTRIB_COLOR, "i_color");
     glBindAttribLocation(program, ATTRIB_NORMAL, "i_normal");
+    glBindAttribLocation(program, ATTRIB_COLOR_SECONDARY, "i_color2D");
 
 	glLinkProgram(program);
 
@@ -1034,9 +1043,15 @@ void QMDLRenderer::rebuildBuffer()
             }
 
             if (MainWindow::instance().getSelectMode() == SelectMode::Face)
+            {
                 ov0.color = ov1.color = ov2.color = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected3D : EditorColorId::FaceUnselected3D);
+                ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected2D : EditorColorId::FaceUnselected2D);
+            }
             else
+            {
                 ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::FaceUnselected3D);
+                ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(EditorColorId::FaceUnselected2D);
+            }
         }
 
         {

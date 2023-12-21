@@ -20,6 +20,13 @@ enum class EditorColorId
 	FaceLineSelected3D,
 	FaceUnselected3D,
 	FaceSelected3D,
+	
+	VertexTickUnselectedUV,
+	VertexTickSelectedUV,
+	FaceLineUnselectedUV,
+	FaceLineSelectedUV,
+	FaceUnselectedUV,
+	FaceSelectedUV,
 
 	Grid,
 	OriginX,
@@ -45,6 +52,13 @@ static constexpr const char *EditorColorNames[] = {
 	"ColorFaceUnselected3D",
 	"ColorFaceSelected3D",
 
+	"ColorVertexTickUnselectedUV",
+	"ColorVertexTickSelectedUV",
+	"ColorFaceLineUnselectedUV",
+	"ColorFaceLineSelectedUV",
+	"ColorFaceUnselectedUV",
+	"ColorFaceSelectedUV",
+
 	"ColorGrid",
 	"ColorOriginX",
 	"ColorOriginY",
@@ -57,15 +71,22 @@ static constexpr std::array<QColor, std::size(EditorColorNames)> EditorColorDefa
 	QColor(255, 235, 31),
 	QColor(123, 123, 123),
 	QColor(255, 235, 31),
-	QColor(255, 255, 255, 31),
-	QColor(255, 171, 7, 63),
+	QColor(0, 0, 0),
+	QColor(255, 171, 7),
 
 	QColor(235, 159, 39),
 	QColor(255, 235, 31),
 	QColor(0, 0, 0),
 	QColor(255, 235, 31),
-	QColor(255, 255, 255, 255),
+	QColor(255, 255, 255),
 	QColor(255, 171, 7),
+
+	QColor(135, 107, 87),
+	QColor(255, 235, 31),
+	QColor(123, 123, 123),
+	QColor(255, 235, 31),
+	QColor(255, 255, 255, 31),
+	QColor(255, 171, 7, 63),
 
 	QColor(235, 211, 199),
 	QColor(255, 0, 0, 127),

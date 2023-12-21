@@ -64,7 +64,7 @@ public:
     int animationStartFrame() const;
     int animationEndFrame() const;
     bool getSyncSelection() const;
-    void setSyncSelection(bool value) const;
+    void setSyncSelection(bool value);
     RenderParameters getRenderParameters(bool is_2d) const;
     EditorTool selectedTool() const;
     SelectMode getSelectMode() const;
@@ -73,8 +73,7 @@ public:
         if (_activeModel)
             return *_activeModel;
 
-        static ModelData emptyModel;
-        return emptyModel;
+        return ModelData::blankModel;
     }
     constexpr ModelMutator &activeModelMutator()
     {
