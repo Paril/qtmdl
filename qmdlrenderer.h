@@ -118,8 +118,9 @@ private:
     ProgramShared _modelProgram, _simpleProgram;
 
     GLuint _buffer, _pointBuffer, _smoothNormalBuffer, _flatNormalBuffer, _axisBuffer, _gridBuffer;
-    GLuint _whiteTexture, _blackTexture, _modelTexture;
+    GLuint _whiteTexture, _blackTexture;
     size_t _gridSize;
+    std::vector<GLuint> _modelTextures;
     std::vector<GPUVertexData> _bufferData;
     std::vector<GPUPointData> _pointData;
     std::vector<QVector3D> _smoothNormalData, _flatNormalData;

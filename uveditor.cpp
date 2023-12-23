@@ -74,13 +74,13 @@ void UVEditor::selectAll()
     auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        mutator.selectAllVerticesUV();
+        mutator.selectAllVerticesUV(0);
     else
-        mutator.selectAllTrianglesUV();
+        mutator.selectAllTrianglesUV(0);
 
     if (getSyncSelection())
     {
-        mutator.syncSelectionUV();
+        mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
 
@@ -92,13 +92,13 @@ void UVEditor::selectNone()
     auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        mutator.selectNoneVerticesUV();
+        mutator.selectNoneVerticesUV(0);
     else
-        mutator.selectNoneTrianglesUV();
+        mutator.selectNoneTrianglesUV(0);
 
     if (getSyncSelection())
     {
-        mutator.syncSelectionUV();
+        mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
 
@@ -110,13 +110,13 @@ void UVEditor::selectInverse()
     auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        mutator.selectInverseVerticesUV();
+        mutator.selectInverseVerticesUV(0);
     else
-        mutator.selectInverseTrianglesUV();
+        mutator.selectInverseTrianglesUV(0);
 
     if (getSyncSelection())
     {
-        mutator.syncSelectionUV();
+        mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
 
@@ -128,17 +128,20 @@ static size_t countNumSelected(UVSelectMode mode, const ModelData &model)
 {
     size_t num_selected = 0;
 
-    if (mode == UVSelectMode::Vertex)
+    for (auto &mesh : model.meshes)
     {
-        for (size_t i = 0; i < model.texcoords.size(); i++)
-            if (model.texcoords[i].selected)
-                num_selected++;
-    }
-    else
-    {
-        for (auto &tri : model.triangles)
-            if (tri.selectedUV)
-                num_selected++;
+        if (mode == UVSelectMode::Vertex)
+        {
+            for (size_t i = 0; i < mesh.texcoords.size(); i++)
+                if (mesh.texcoords[i].selected)
+                    num_selected++;
+        }
+        else
+        {
+            for (auto &tri : mesh.triangles)
+                if (tri.selectedUV)
+                    num_selected++;
+        }
     }
 
     return num_selected;
@@ -167,13 +170,13 @@ void UVEditor::selectTouching()
     auto &mutator = MainWindow::instance().activeModelMutator();
 
     if (getSelectMode() == UVSelectMode::Vertex)
-        mutator.selectTouchingVerticesUV();
+        mutator.selectTouchingVerticesUV(0);
     else
-        mutator.selectTouchingTrianglesUV();
+        mutator.selectTouchingTrianglesUV(0);
 
     if (getSyncSelection())
     {
-        mutator.syncSelectionUV();
+        mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
 
@@ -245,7 +248,7 @@ bool UVEditor::getSyncSelection() const
 void UVEditor::setSyncSelection(bool value)
 {
 	this->_ui->actionSync_3D_Selection->setChecked(value);
-	MainWindow::instance().activeModelMutator().syncSelectionUV();
+	MainWindow::instance().activeModelMutator().syncSelectionUV(0);
 }
 
 void UVEditor::show()
@@ -305,6 +308,9 @@ void UVEditor::modelLoaded()
 {
     auto &model = MainWindow::instance().activeModel();
     
-	this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
+    if (!model.selectedSkin.has_value())
+        this->_ui->label_5->setText("N/A");
+    else
+    	this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value()));
     resetZoom();
 }

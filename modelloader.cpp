@@ -9,6 +9,8 @@ static inline ModelData constructBlankModel()
 {
 	ModelData model;
 	model.frames.emplace_back("Frame 1");
+	model.meshes.emplace_back();
+	model.meshes[0].frames.emplace_back();
 	return model;
 }
 
@@ -410,24 +412,32 @@ std::unique_ptr<ModelData> LoadMD2(QString filename)
 
 	data.frames.resize(header.num_frames);
 
-	for (auto &frame : data.frames)
+	auto &mesh = data.meshes.emplace_back();
+
+	data.frames.resize(header.num_frames);
+	mesh.frames.resize(header.num_frames);
+
+	for (auto &frame : mesh.frames)
 		frame.vertices.resize(header.num_xyz);
 
-	data.vertices.resize(header.num_xyz);
+	mesh.vertices.resize(header.num_xyz);
 
 	file.seek(header.ofs_frames);
 
-	for (auto &frame : data.frames)
+	for (size_t i = 0; i < data.frames.size(); i++)
 	{
+		auto &modelframe = data.frames[i];
+		auto &meshframe = mesh.frames[i];
+
 		daliasframe_t frame_header;
 		stream >> frame_header.scale[0] >> frame_header.scale[1] >> frame_header.scale[2];
 		stream >> frame_header.translate[0] >> frame_header.translate[1] >> frame_header.translate[2];
 		stream.readRawData(frame_header.name, sizeof(frame_header.name));
 		frame_header.name[sizeof(frame_header.name) - 1] = '\0';
 
-		frame.name = frame_header.name;
+		modelframe.name = frame_header.name;
 
-		for (auto &vert : frame.vertices)
+		for (auto &vert : meshframe.vertices)
 		{
 			dtrivertx_t v;
 			stream >> v.v[0] >> v.v[1] >> v.v[2];
@@ -443,9 +453,9 @@ std::unique_ptr<ModelData> LoadMD2(QString filename)
 	}
 
 	file.seek(header.ofs_st);
-	data.texcoords.resize(header.num_st);
+	mesh.texcoords.resize(header.num_st);
 
-	for (auto &st : data.texcoords)
+	for (auto &st : mesh.texcoords)
 	{
 		dstvert_t v;
 		stream >> v.s >> v.t;
@@ -453,9 +463,9 @@ std::unique_ptr<ModelData> LoadMD2(QString filename)
 	}
 
 	file.seek(header.ofs_tris);
-	data.triangles.resize(header.num_tris);
+	mesh.triangles.resize(header.num_tris);
 
-	for (auto &tri : data.triangles)
+	for (auto &tri : mesh.triangles)
 	{
 		dtriangle_t t;
 		stream >> t.index_xyz[0] >> t.index_xyz[1] >> t.index_xyz[2];
@@ -513,6 +523,7 @@ std::unique_ptr<ModelData> LoadMD2(QString filename)
 
 void SaveMD2(const ModelData &model, QString filename)
 {
+#if 0
     QFile file(filename);
 
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -613,6 +624,7 @@ void SaveMD2(const ModelData &model, QString filename)
 			stream << v.lightnormalindex;
 		}
 	}
+#endif
 }
 
 /*
@@ -657,6 +669,36 @@ struct dmd2f_t
 	int32_t	ofs_end;		// end of file
 };
 
+std::optional<QFileInfo> FindSkinFile(QDir base_dir, const char *skin_path, const std::initializer_list<const char *> &formats)
+{
+	// try to find the matching PCX file
+	QDir skin_dir = base_dir;
+	QFileInfo skin_file;
+
+	while (!skin_dir.isRoot())
+	{
+		for (auto &format : formats)
+		{
+			skin_file = QFileInfo(skin_dir.filePath(skin_path));
+			QString s = skin_file.path() + "/" + skin_file.baseName() + "." + format;
+			skin_file = QFileInfo(s);
+
+			if (skin_file.exists())
+				break;
+		}
+
+		if (skin_file.exists())
+			break;
+
+		skin_dir.cdUp();
+	}
+
+	if (!skin_file.exists())
+		return std::nullopt;
+
+	return skin_file;
+}
+
 std::unique_ptr<ModelData> LoadMD2F(QString filename)
 {
     QFile file(filename);
@@ -675,23 +717,29 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 
 	data.frames.resize(header.num_frames);
 
-	for (auto &frame : data.frames)
+	auto &mesh = data.meshes.emplace_back();
+
+	data.frames.resize(header.num_frames);
+	mesh.frames.resize(header.num_frames);
+
+	for (auto &frame : mesh.frames)
 		frame.vertices.resize(header.num_xyz);
 
-	data.vertices.resize(header.num_xyz);
-
-	file.seek(header.ofs_frames);
-
-	for (auto &frame : data.frames)
+	mesh.vertices.resize(header.num_xyz);
+	
+	for (size_t i = 0; i < data.frames.size(); i++)
 	{
+		auto &modelframe = data.frames[i];
+		auto &meshframe = mesh.frames[i];
+
 		qint64 pos = file.pos();
 		daliasframef_t frame_header;
 		stream.readRawData(frame_header.name, sizeof(frame_header.name));
 		frame_header.name[sizeof(frame_header.name) - 1] = '\0';
 
-		frame.name = frame_header.name;
+		modelframe.name = frame_header.name;
 
-		for (auto &vert : frame.vertices)
+		for (auto &vert : meshframe.vertices)
 		{
 			dtrivertxf_t v;
 			stream >> v.position[0] >> v.position[1] >> v.position[2];
@@ -703,9 +751,9 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 	}
 
 	file.seek(header.ofs_st);
-	data.texcoords.resize(header.num_st);
+	mesh.texcoords.resize(header.num_st);
 
-	for (auto &st : data.texcoords)
+	for (auto &st : mesh.texcoords)
 	{
 		dstvert_t v;
 		stream >> v.s >> v.t;
@@ -713,9 +761,9 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 	}
 
 	file.seek(header.ofs_tris);
-	data.triangles.resize(header.num_tris);
+	mesh.triangles.resize(header.num_tris);
 
-	for (auto &tri : data.triangles)
+	for (auto &tri : mesh.triangles)
 	{
 		dtriangle_t t;
 		stream >> t.index_xyz[0] >> t.index_xyz[1] >> t.index_xyz[2];
@@ -730,7 +778,6 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 	file.seek(header.ofs_skins);
 
 	QDir model_dir = QFileInfo(filename).dir();
-	QString model_file = model_dir.absolutePath();
 
 	for (auto &skin : data.skins)
 	{
@@ -739,32 +786,19 @@ std::unique_ptr<ModelData> LoadMD2F(QString filename)
 		skin_path[sizeof(skin_path) - 1] = '\0';
 
 		// try to find the matching PCX file
-		QDir skin_dir = model_dir;
-		QFileInfo skin_file;
-
-		while (!skin_dir.isRoot())
+		if (auto skin_file = FindSkinFile(model_dir, skin_path, { "pcx", "tga", "png" }))
 		{
-			skin_file = QFileInfo(skin_dir.filePath(skin_path));
+			QFile sf = QFile(skin_file->filePath());
 
-			if (skin_file.exists())
-				break;
-
-			skin_dir.cdUp();
-		}
-
-		if (!skin_file.exists())
-			continue;
-
-		QFile sf = QFile(skin_file.filePath());
-
-		if (!sf.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-			continue;
+			if (!sf.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+				continue;
 		
-		QDataStream skinStream(&sf);
-		skinStream.setByteOrder(QDataStream::LittleEndian);
-		skinStream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+			QDataStream skinStream(&sf);
+			skinStream.setByteOrder(QDataStream::LittleEndian);
+			skinStream.setFloatingPointPrecision(QDataStream::SinglePrecision);
 
-		LoadPCX(skinStream, skin);
+			LoadPCX(skinStream, skin);
+		}
 	}
 	
 	return std::make_unique<ModelData>(std::move(data));
@@ -941,6 +975,8 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 
 	ModelData data;
 
+	auto &mesh = data.meshes.emplace_back();
+
 	int32_t group_id = 0;
 
 	auto parseSingleSkin = [&stream, &header](ModelSkin &skin) {
@@ -999,8 +1035,8 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 	std::vector<stvert_t> stverts;
 	stverts.resize(header.numverts);
 	
-	data.texcoords.resize(header.numverts);
-	data.vertices.resize(header.numverts);
+	mesh.texcoords.resize(header.numverts);
+	mesh.vertices.resize(header.numverts);
 
 	for (int i = 0; i < header.numverts; i++)
 	{
@@ -1009,11 +1045,11 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 		stream >> st.s;
 		stream >> st.t;
 
-		auto &v = data.texcoords[i];
+		auto &v = mesh.texcoords[i];
 		v.pos = { (float) st.s / header.skinwidth, (float) st.t / header.skinheight };
 	}
 
-	data.triangles.resize(header.numtris);
+	mesh.triangles.resize(header.numtris);
 
 	for (int i = 0; i < header.numtris; i++)
 	{
@@ -1021,7 +1057,7 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 		stream >> t.facesfront;
 		stream >> t.vertindex[0] >> t.vertindex[1] >> t.vertindex[2];
 
-		auto &tri = data.triangles[i];
+		auto &tri = mesh.triangles[i];
 		tri.vertices = { (uint32_t) t.vertindex[0], (uint32_t) t.vertindex[1], (uint32_t) t.vertindex[2] };
 
 		if (!t.facesfront)
@@ -1030,8 +1066,8 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 			{
 				if (stverts[tri.vertices[x]].onseam)
 				{
-					tri.texcoords[x] = data.texcoords.size();
-					data.texcoords.emplace_back(
+					tri.texcoords[x] = mesh.texcoords.size();
+					mesh.texcoords.emplace_back(
 						QVector2D { ((float) stverts[tri.vertices[x]].s / header.skinwidth) + 0.5f, (float) stverts[tri.vertices[x]].t / header.skinheight }
 					);
 				}
@@ -1048,7 +1084,7 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 
 	group_id = 0;
 
-	auto parseSingleFrame = [&stream, &header](ModelFrame &outframe) {
+	auto parseSingleFrame = [&stream, &header](ModelFrame &outframe, MeshFrame &meshframe) {
 		dmdlaliasframe_t frame;
 		stream >> frame.bboxmin.v[0] >> frame.bboxmin.v[1] >> frame.bboxmin.v[2];
 		stream >> frame.bboxmin.lightnormalindex;
@@ -1059,7 +1095,7 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 		frame.name[sizeof(frame.name) - 1] = 0;
 
 		outframe.name = frame.name;
-		outframe.vertices.resize(header.numverts);
+		meshframe.vertices.resize(header.numverts);
 
 		for (int x = 0; x < header.numverts; x++)
 		{
@@ -1067,7 +1103,7 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 			stream >> v.v[0] >> v.v[1] >> v.v[2];
 			stream >> v.lightnormalindex;
 
-			auto &vert = outframe.vertices[x];
+			auto &vert = meshframe.vertices[x];
 
 			vert.position = {
 				(v.v[0] * header.scale[0]) + header.scale_origin[0],
@@ -1086,7 +1122,8 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 		if (type == ALIAS_SINGLE)
 		{
 			auto &outframe = data.frames.emplace_back();
-			parseSingleFrame(outframe);
+			auto &meshframe = mesh.frames.emplace_back();
+			parseSingleFrame(outframe, meshframe);
 		}
 		else
 		{
@@ -1102,6 +1139,7 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 			for (int f = 0; f < group.numframes; f++)
 			{
 				auto &outframe = data.frames.emplace_back();
+				auto &meshframe = mesh.frames.emplace_back();
 
 				daliasinterval_t interval;
 				stream >> interval.interval;
@@ -1114,11 +1152,258 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 			for (int f = 0; f < group.numframes; f++)
 			{
 				auto &outframe = data.frames[frame_start + f];
-				parseSingleFrame(outframe);
+				auto &meshframe = mesh.frames[frame_start + f];
+				parseSingleFrame(outframe, meshframe);
 			}
 		}
 	}
 	
+	return std::make_unique<ModelData>(std::move(data));
+}
+
+
+/*
+========================================================================
+
+.MD3 triangle model file format
+
+========================================================================
+*/
+
+constexpr size_t MAX_QPATH = 64;
+constexpr int MD3_IDENT			= (('3'<<24)+('P'<<16)+('D'<<8)+'I');
+constexpr int MD3_VERSION		= 15;
+
+// limits
+constexpr size_t MD3_MAX_LODS		= 4;
+constexpr size_t MD3_MAX_TRIANGLES	= 8192;	// per surface
+constexpr size_t MD3_MAX_VERTS		= 4096;	// per surface
+constexpr size_t MD3_MAX_SHADERS	= 256;	// per surface
+constexpr size_t MD3_MAX_FRAMES		= 1024;	// per model
+constexpr size_t MD3_MAX_SURFACES	= 32;	// per model
+constexpr size_t MD3_MAX_TAGS		= 16;	// per frame
+
+// vertex scales
+constexpr float MD3_XYZ_SCALE		= (1.0/64);
+
+struct md3Frame_t {
+	vec3_t		bounds[2];
+	vec3_t		localOrigin;
+	float		radius;
+	char		name[16];
+};
+
+struct md3Tag_t {
+	char		name[MAX_QPATH];	// tag name
+	vec3_t		origin;
+	vec3_t		axis[3];
+};
+
+/*
+** md3Surface_t
+**
+** CHUNK			SIZE
+** header			sizeof( md3Surface_t )
+** shaders			sizeof( md3Shader_t ) * numShaders
+** triangles[0]		sizeof( md3Triangle_t ) * numTriangles
+** st				sizeof( md3St_t ) * numVerts
+** XyzNormals		sizeof( md3XyzNormal_t ) * numVerts * numFrames
+*/
+struct md3Surface_t {
+	int		ident;				// 
+
+	char	name[MAX_QPATH];	// polyset name
+
+	int		flags;
+	int		numFrames;			// all surfaces in a model should have the same
+
+	int		numShaders;			// all surfaces in a model should have the same
+	int		numVerts;
+
+	int		numTriangles;
+	int		ofsTriangles;
+
+	int		ofsShaders;			// offset from start of md3Surface_t
+	int		ofsSt;				// texture coords are common for all frames
+	int		ofsXyzNormals;		// numVerts * numFrames
+
+	int		ofsEnd;				// next surface follows
+};
+
+struct md3Shader_t {
+	char			name[MAX_QPATH];
+	int				shaderIndex;	// for in-game use
+};
+
+struct md3Triangle_t {
+	int			indexes[3];
+};
+
+struct md3St_t {
+	float		st[2];
+};
+
+struct md3XyzNormal_t {
+	short		xyz[3];
+	short		normal;
+};
+
+struct md3Header_t {
+	int			ident;
+	int			version;
+
+	char		name[MAX_QPATH];	// model name
+
+	int			flags;
+
+	int			numFrames;
+	int			numTags;			
+	int			numSurfaces;
+
+	int			numSkins;
+
+	int			ofsFrames;			// offset for first frame
+	int			ofsTags;			// numFrames * numTags
+	int			ofsSurfaces;		// first surface, others follow
+
+	int			ofsEnd;				// end of file
+};
+
+constexpr double Q_PI	= 3.14159265358979323846;
+
+std::unique_ptr<ModelData> LoadMD3(QString filename)
+{
+    QFile file(filename);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+        throw std::runtime_error("bad");
+
+    QDataStream stream(&file);
+    stream.setByteOrder(QDataStream::LittleEndian);
+	stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
+
+	md3Header_t header;
+	stream.readRawData(reinterpret_cast<char *>(&header), sizeof(header));
+
+	ModelData data;
+
+	data.frames.resize(header.numFrames);
+
+	stream.device()->seek(header.ofsFrames);
+
+	for (auto &frame : data.frames)
+	{
+		md3Frame_t inframe;
+		stream.readRawData(reinterpret_cast<char *>(&inframe), sizeof(inframe));
+		inframe.name[sizeof(inframe.name) - 1] = '\0';
+
+		frame.name = inframe.name;
+	}
+
+	stream.device()->seek(header.ofsSurfaces);
+
+	data.meshes.resize(header.numSurfaces);
+
+	std::unordered_map<std::string, int32_t> shaders_by_name;
+	QDir model_dir = QFileInfo(filename).dir();
+
+	for (auto &mesh : data.meshes)
+	{
+		qint64 surface_start = stream.device()->pos();
+
+		md3Surface_t insurface;
+		stream.readRawData(reinterpret_cast<char *>(&insurface), sizeof(insurface));
+		insurface.name[sizeof(insurface.name) - 1] = '\0';
+
+		mesh.name = insurface.name;
+
+		mesh.frames.resize(insurface.numFrames);
+		mesh.texcoords.resize(insurface.numVerts);
+		mesh.vertices.resize(insurface.numVerts);
+		mesh.triangles.resize(insurface.numTriangles);
+
+		stream.device()->seek(surface_start + insurface.ofsTriangles);
+
+		for (auto &triangle : mesh.triangles)
+		{
+			md3Triangle_t intri;
+			stream.readRawData(reinterpret_cast<char *>(&intri), sizeof(intri));
+
+			triangle.texcoords = triangle.vertices = { (uint32_t) intri.indexes[0], (uint32_t) intri.indexes[1], (uint32_t) intri.indexes[2] };
+		}
+
+		stream.device()->seek(surface_start + insurface.ofsSt);
+
+		for (auto &st : mesh.texcoords)
+		{
+			md3St_t inst;
+			stream.readRawData(reinterpret_cast<char *>(&inst), sizeof(inst));
+
+			st.pos = { inst.st[0], inst.st[1] };
+		}
+
+		stream.device()->seek(surface_start + insurface.ofsXyzNormals);
+
+		for (auto &frame : mesh.frames)
+		{
+			frame.vertices.resize(insurface.numVerts);
+
+			for (auto &vertex : frame.vertices)
+			{
+				md3XyzNormal_t invertex;
+				stream.readRawData(reinterpret_cast<char *>(&invertex), sizeof(invertex));
+				
+				vertex.position[0] = invertex.xyz[0] * MD3_XYZ_SCALE;
+				vertex.position[1] = invertex.xyz[1] * MD3_XYZ_SCALE;
+				vertex.position[2] = invertex.xyz[2] * MD3_XYZ_SCALE;
+
+				// decode the lat/lng normal to a 3 float normal
+				float lat = ( invertex.normal >> 8 ) & 0xff;
+				float lng = ( invertex.normal & 0xff );
+				lat *= Q_PI/128;
+				lng *= Q_PI/128;
+
+				vertex.normal[0] = cos(lat) * sin(lng);
+				vertex.normal[1] = sin(lat) * sin(lng);
+				vertex.normal[2] = cos(lng);
+			}
+		}
+
+		stream.device()->seek(surface_start + insurface.ofsShaders);
+
+		md3Shader_t inshader;
+		stream.readRawData(reinterpret_cast<char *>(&inshader), sizeof(inshader));
+		inshader.name[sizeof(inshader.name) - 1] = '\0';
+
+		if (auto it = shaders_by_name.find(inshader.name); it != shaders_by_name.end())
+			mesh.assigned_skin = it->second;
+		else
+		{
+			mesh.assigned_skin = (int32_t) data.skins.size();
+			auto &skin = data.skins.emplace_back();
+			skin.width = skin.height = 64;
+			skin.name = inshader.name;
+			shaders_by_name.insert_or_assign(skin.name, mesh.assigned_skin.value());
+
+			if (auto skin_file = FindSkinFile(model_dir, inshader.name, { "tga", "png", "jpg", "jpeg", "pcx" }))
+			{	
+				if (!skin.image.load(skin_file->filePath()))
+					skin.image.load("res/missing.png");
+			}
+			else
+				skin.image.load("res/missing.png");
+
+			if (skin.image.width())
+			{
+				skin.image.convertTo(QImage::Format_ARGB32);
+				skin.width = skin.image.width();
+				skin.height = skin.image.height();
+			}
+		}
+
+		stream.device()->seek(surface_start + insurface.ofsEnd);
+	}
+
 	return std::make_unique<ModelData>(std::move(data));
 }
 
@@ -1134,6 +1419,8 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 	    model = LoadMDL(file.filePath());
 	else if (type.name() == "x-qtmdl/qim")
 	    model = LoadQIM(file.filePath());
+	else if (type.name() == "x-qtmdl/md3")
+	    model = LoadMD3(file.filePath());
 	else
 		throw std::runtime_error("invalid file type");
 
@@ -1149,6 +1436,9 @@ std::unique_ptr<ModelData> LoadMDL(QString filename)
 		{
 			// already loaded
 			if (skin.image.width())
+				continue;
+			// nothing to load
+			else if (!skin.raw_data)
 				continue;
 
 			skin.image = QImage(skin.width, skin.height, QImage::Format_ARGB32);

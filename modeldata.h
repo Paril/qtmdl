@@ -174,18 +174,6 @@ private:
     }
 };
 
-struct ModelFrameVertex
-{
-    QVector3D position;
-    QVector3D normal;
-
-    inline QDataSync &sync(QDataSync &stream)
-    {
-        stream.sync(position, normal);
-        return stream;
-    }
-};
-
 struct ModelTriangle
 {
 	std::array<uint32_t, 3>	vertices;
@@ -215,26 +203,12 @@ struct Q1GroupData
 struct ModelFrame
 {
     std::string					  name;
-    std::vector<ModelFrameVertex> vertices;
     std::optional<Q1GroupData>    q1_data;
 
     inline QDataSync &sync(QDataSync &stream)
     {
-        stream.sync(name, q1_data, vertices);
+        stream.sync(name, q1_data);
         return stream;
-    }
-
-    inline BoundingBox bounds() const
-    {
-        BoundingBox bounds;
-
-        for (auto &vert : vertices)
-            bounds.add(vert.position);
-
-        if (bounds.empty())
-            return BoundingBox(0);
-
-        return bounds;
     }
 };
 
@@ -274,10 +248,13 @@ struct ModelSkin
 struct ModelVertex
 {
     bool selected = false;
+    // if set, we're a tag; tags cannot be a part
+    // of any triangle.
+    std::optional<QQuaternion> quat = std::nullopt;
 
     inline QDataSync &sync(QDataSync &stream)
     {
-        stream.sync(selected);
+        stream.sync(selected, quat);
         return stream;
     }
 };
@@ -294,36 +271,57 @@ struct ModelTexCoord
     }
 };
 
-// model data contains all of the data 'saved' with
-// a model. It can not be mutated directly.
-struct ModelData
+struct MeshFrameVertex
 {
-private:
-    // no copy constructor, to prevent errors
-    ModelData(const ModelData &) = delete;
-
-public:
-    ModelData(ModelData &&) = default;
-    ModelData() = default;
-
-    // model data
-    // nb: a model will always have at least one frame.
-    std::vector<ModelFrame>     frames;
-    // these can all be empty for a valid model
-    std::vector<ModelTexCoord>  texcoords;
-    std::vector<ModelTriangle>  triangles;
-    std::vector<ModelSkin>      skins;
-    std::vector<ModelVertex>    vertices;
-
-    // state data
-    int32_t                 selectedFrame = 0;
-    // an unselected skin is technically valid
-    // but will only occur if the model has zero skins.
-    std::optional<int32_t>  selectedSkin = std::nullopt;
+    QVector3D position;
+    QVector3D normal;
 
     inline QDataSync &sync(QDataSync &stream)
     {
-        stream.sync(frames, texcoords, triangles, skins, vertices, selectedFrame, selectedSkin);
+        stream.sync(position, normal);
+        return stream;
+    }
+};
+
+struct MeshFrame
+{
+    std::vector<MeshFrameVertex> vertices;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(vertices);
+        return stream;
+    }
+
+    inline BoundingBox bounds() const
+    {
+        BoundingBox bounds;
+
+        for (auto &vert : vertices)
+            bounds.add(vert.position);
+
+        if (bounds.empty())
+            return BoundingBox(0);
+
+        return bounds;
+    }
+};
+
+struct ModelMesh
+{
+    // these can all be empty for a valid model
+    std::vector<ModelTexCoord>  texcoords;
+    std::vector<ModelTriangle>  triangles;
+    std::vector<ModelVertex>    vertices;
+    std::vector<MeshFrame>      frames;
+    // assigned skin for this model; if set, it will
+    // always use this texture and not the selected skin.
+    std::optional<int32_t>      assigned_skin = std::nullopt;
+    std::string				    name;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(texcoords, triangles, vertices, frames, assigned_skin, name);
         return stream;
     }
 
@@ -358,20 +356,14 @@ public:
     // return a fixed array of texcoord positions
     // that match the given transformation. it only modifies
     // coordinates that are actually changed by the matrix.
-    // FIXME in the future this should be cached state
-    const std::vector<QVector2D> &transformTexcoords(const QMatrix4x4 &matrix, UVSelectMode mode) const
+    const std::vector<QVector2D> &transformTexcoords(int32_t width, int32_t height, const QMatrix4x4 &matrix, UVSelectMode mode) const
     {
         static std::vector<QVector2D> coordinates;
         coordinates.resize(texcoords.size());
 
-        const ModelSkin *skin = getSelectedSkin();
-
-        if (!skin)
-            return coordinates;
-
         const auto &verticesSelected = getSelectedTextureCoordinates(mode);
 
-        QVector2D scale { (float) skin->width, (float) skin->height };
+        QVector2D scale { (float) width, (float) height };
 
         for (size_t i = 0; i < texcoords.size(); i++)
         {
@@ -387,6 +379,41 @@ public:
 
         return coordinates;
     }
+};
+
+// model data contains all of the data 'saved' with
+// a model. It can not be mutated directly.
+struct ModelData
+{
+private:
+    // no copy constructor, to prevent errors
+    ModelData(const ModelData &) = delete;
+
+public:
+    ModelData(ModelData &&) = default;
+    ModelData() = default;
+
+    // model data
+    // nb: a model will always have at least one frame.
+    std::vector<ModelFrame>     frames;
+    // nb: a model will always have at least one mesh.
+    std::vector<ModelMesh>      meshes;
+    std::vector<ModelSkin>      skins;
+
+    // state data
+    // selected animation frame
+    int32_t                 selectedFrame = 0;
+    // an unselected skin is valid
+    std::optional<int32_t>  selectedSkin = std::nullopt;
+    // if true, each mesh is assigned a matching skin
+    // instead of all meshes using the same current skin.
+    bool                    skinPerObject = false;
+
+    inline QDataSync &sync(QDataSync &stream)
+    {
+        stream.sync(frames, meshes, skins, selectedFrame, selectedSkin, skinPerObject);
+        return stream;
+    }
 
     constexpr const ModelSkin *getSelectedSkin() const
     {
@@ -399,9 +426,10 @@ public:
     {
         BoundingBox bounds;
 
-        for (auto &frame : frames)
-            for (auto &vert : frame.vertices)
-                bounds.add(vert.position);
+        for (auto &mesh : meshes)
+            for (auto &frame : mesh.frames)
+                for (auto &vert : frame.vertices)
+                    bounds.add(vert.position);
 
         if (bounds.empty())
             return BoundingBox(0);
@@ -444,9 +472,9 @@ public:
         data->selectedSkin = std::max(0, data->selectedSkin.value_or(0) - 1);
     }
 
-    void selectRectangleVerticesUV(const QRectF &rect, Qt::KeyboardModifiers modifiers)
+    void selectRectangleVerticesUV(int32_t mesh, const QRectF &rect, Qt::KeyboardModifiers modifiers)
     {
-        for (auto &tc : data->texcoords)
+        for (auto &tc : data->meshes[mesh].texcoords)
         {
             if (!rect.contains(tc.pos.toPointF()))
                 continue;
@@ -458,13 +486,13 @@ public:
         }
     }
 
-    void selectRectangleTrianglesUV(const QRectF &rect, Qt::KeyboardModifiers modifiers)
+    void selectRectangleTrianglesUV(int32_t mesh, const QRectF &rect, Qt::KeyboardModifiers modifiers)
     {
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
         {
             for (auto &tci : tri.texcoords)
             {
-                auto &tc = data->texcoords[tci];
+                auto &tc = data->meshes[mesh].texcoords[tci];
 
                 if (!rect.contains(tc.pos.toPointF()))
                     continue;
@@ -477,70 +505,70 @@ public:
         }
     }
 
-    void selectAllVerticesUV()
+    void selectAllVerticesUV(int32_t mesh)
     {
-        for (auto &v : data->texcoords)
+        for (auto &v : data->meshes[mesh].texcoords)
             v.selected = true;
     }
 
-    void selectAllTrianglesUV()
+    void selectAllTrianglesUV(int32_t mesh)
     {
-        for (auto &t : data->triangles)
+        for (auto &t : data->meshes[mesh].triangles)
             t.selectedUV = true;
     }
 
-    void selectNoneVerticesUV()
+    void selectNoneVerticesUV(int32_t mesh)
     {
-        for (auto &v : data->texcoords)
+        for (auto &v : data->meshes[mesh].texcoords)
             v.selected = false;
     }
 
-    void selectNoneTrianglesUV()
+    void selectNoneTrianglesUV(int32_t mesh)
     {
-        for (auto &t : data->triangles)
+        for (auto &t : data->meshes[mesh].triangles)
             t.selectedUV = false;
     }
 
-    void selectInverseVerticesUV()
+    void selectInverseVerticesUV(int32_t mesh)
     {
-        for (auto &v : data->texcoords)
+        for (auto &v : data->meshes[mesh].texcoords)
             v.selected = !v.selected;
     }
 
-    void selectInverseTrianglesUV()
+    void selectInverseTrianglesUV(int32_t mesh)
     {
-        for (auto &t : data->triangles)
+        for (auto &t : data->meshes[mesh].triangles)
             t.selectedUV = !t.selectedUV;
     }
 
-    void selectTouchingVerticesUV()
+    void selectTouchingVerticesUV(int32_t mesh)
     {
         std::unordered_set<size_t> selected;
 
-        for (size_t i = 0; i < data->texcoords.size(); i++)
-            if (data->texcoords[i].selected)
+        for (size_t i = 0; i < data->meshes[mesh].texcoords.size(); i++)
+            if (data->meshes[mesh].texcoords[i].selected)
                 selected.insert(i);
 
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
         {
             if (selected.contains(tri.texcoords[0]) ||
                 selected.contains(tri.texcoords[1]) ||
                 selected.contains(tri.texcoords[2]))
                 for (auto &tc : tri.texcoords)
-                    data->texcoords[tc].selected = true;
+                    data->meshes[mesh].texcoords[tc].selected = true;
         }
     }
 
-    void selectTouchingTrianglesUV()
+    void selectTouchingTrianglesUV(int32_t mesh)
     {
         std::unordered_set<size_t> selected;
 
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
             if (tri.selectedUV)
                 for (auto &tc : tri.texcoords)
                     selected.insert(tc);
 
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
         {
             if (selected.contains(tri.texcoords[0]) ||
                 selected.contains(tri.texcoords[1]) ||
@@ -553,16 +581,16 @@ public:
     }
 
     // sync active UV selection to 3D
-    void syncSelectionUV()
+    void syncSelectionUV(int32_t mesh)
     {
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
             tri.selectedFace = tri.selectedUV;
     }
 
     // sync active 3D selection to UV
-    void syncSelection3D()
+    void syncSelection3D(int32_t mesh)
     {
-        for (auto &tri : data->triangles)
+        for (auto &tri : data->meshes[mesh].triangles)
             tri.selectedUV = tri.selectedFace;
     }
 };

@@ -18,7 +18,11 @@ QUVPainter::QUVPainter(QWidget *parent) :
     auto skin = model.getSelectedSkin();
 
     if (!skin)
+    {
+        setMinimumWidth(0);
+        setMinimumHeight(0);
         return;
+    }
 
     auto &uvEditor = MainWindow::instance().uvEditor();
     int scale = uvEditor.getZoom();
@@ -29,36 +33,23 @@ QUVPainter::QUVPainter(QWidget *parent) :
     painter.drawImage(QRect { 0, 0, (int) tcScale.x(), (int) tcScale.y() }, skin->image);
     
     QMatrix4x4 drag = getDragMatrix();
-    const auto &verticesSelected = model.getSelectedTextureCoordinates(uvEditor.getSelectMode());
-    const auto &coordinates = model.transformTexcoords(drag, uvEditor.getSelectMode());
 
-    if (uvEditor.getLineDisplayMode() == LineDisplayMode::Simple)
+    for (auto &mesh : model.meshes)
     {
-        painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineUnselectedUV));
-        painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceUnselectedUV)));
+        if (mesh.assigned_skin.has_value() && mesh.assigned_skin.value() != model.selectedSkin.value())
+            continue;
 
-        for (auto &v : model.triangles)
+        const auto &verticesSelected = mesh.getSelectedTextureCoordinates(uvEditor.getSelectMode());
+        const auto &coordinates = mesh.transformTexcoords(skin->width, skin->height, drag, uvEditor.getSelectMode());
+
+        if (uvEditor.getLineDisplayMode() == LineDisplayMode::Simple)
         {
-            if (uvEditor.getSelectMode() == UVSelectMode::Face && v.selectedUV)
-                continue;
+            painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineUnselectedUV));
+            painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceUnselectedUV)));
 
-            QPointF points[] = {
-                (coordinates[v.texcoords[0]] * tcScale).toPointF(),
-                (coordinates[v.texcoords[1]] * tcScale).toPointF(),
-                (coordinates[v.texcoords[2]] * tcScale).toPointF()
-            };
-
-            painter.drawConvexPolygon(points, std::size(points));
-        }
-
-        if (uvEditor.getSelectMode() == UVSelectMode::Face)
-        {
-            painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineSelectedUV));
-            painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceSelectedUV)));
-
-            for (auto &v : model.triangles)
+            for (auto &v : mesh.triangles)
             {
-                if (!v.selectedUV)
+                if (uvEditor.getSelectMode() == UVSelectMode::Face && v.selectedUV)
                     continue;
 
                 QPointF points[] = {
@@ -69,22 +60,42 @@ QUVPainter::QUVPainter(QWidget *parent) :
 
                 painter.drawConvexPolygon(points, std::size(points));
             }
+
+            if (uvEditor.getSelectMode() == UVSelectMode::Face)
+            {
+                painter.setPen(Settings().getEditorColor(EditorColorId::FaceLineSelectedUV));
+                painter.setBrush(QBrush(Settings().getEditorColor(EditorColorId::FaceSelectedUV)));
+
+                for (auto &v : mesh.triangles)
+                {
+                    if (!v.selectedUV)
+                        continue;
+
+                    QPointF points[] = {
+                        (coordinates[v.texcoords[0]] * tcScale).toPointF(),
+                        (coordinates[v.texcoords[1]] * tcScale).toPointF(),
+                        (coordinates[v.texcoords[2]] * tcScale).toPointF()
+                    };
+
+                    painter.drawConvexPolygon(points, std::size(points));
+                }
+            }
         }
-    }
 
-    if (uvEditor.getVertexDisplayMode() != VertexDisplayMode::None)
-    {
-        for (size_t i = 0; i < model.texcoords.size(); i++)
+        if (uvEditor.getVertexDisplayMode() != VertexDisplayMode::None)
         {
-            QVector2D pos = coordinates[i] * tcScale;
+            for (size_t i = 0; i < mesh.texcoords.size(); i++)
+            {
+                QVector2D pos = coordinates[i] * tcScale;
 
-            const QColor &color = Settings().getEditorColor(verticesSelected.contains(i) ?
-                EditorColorId::VertexTickSelectedUV : EditorColorId::VertexTickUnselectedUV); 
+                const QColor &color = Settings().getEditorColor(verticesSelected.contains(i) ?
+                    EditorColorId::VertexTickSelectedUV : EditorColorId::VertexTickUnselectedUV); 
 
-            if (uvEditor.getVertexDisplayMode() == VertexDisplayMode::Squares)
-                painter.fillRect(pos.x() - 1, pos.y() - 1, 3, 3, color);
-            else
-                painter.fillRect(pos.x(), pos.y(), 1, 1, color);
+                if (uvEditor.getVertexDisplayMode() == VertexDisplayMode::Squares)
+                    painter.fillRect(pos.x() - 1, pos.y() - 1, 3, 3, color);
+                else
+                    painter.fillRect(pos.x(), pos.y(), 1, 1, color);
+            }
         }
     }
 
@@ -121,14 +132,14 @@ void QUVPainter::rectangleSelect(QMouseEvent *e, QRectF rect, QVector2D tcScale)
             rect.setHeight(5 / tcScale.y());
         }
 
-        mutator.selectRectangleVerticesUV(rect, e->modifiers());
+        mutator.selectRectangleVerticesUV(0, rect, e->modifiers());
     }
     else
-        mutator.selectRectangleTrianglesUV(rect, e->modifiers());
+        mutator.selectRectangleTrianglesUV(0, rect, e->modifiers());
 
     if (uvEditor.getSyncSelection())
     {
-        mutator.syncSelectionUV();
+        mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
 }

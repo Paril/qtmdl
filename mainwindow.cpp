@@ -143,7 +143,7 @@ bool MainWindow::getSyncSelection() const
 void MainWindow::setSyncSelection(bool value)
 {
 	this->_ui->actionSync_Skin_Selection->setChecked(value);
-	activeModelMutator().syncSelection3D();
+	activeModelMutator().syncSelection3D(0);
 }
 
 RenderParameters MainWindow::getRenderParameters(bool is_2d) const
@@ -286,6 +286,7 @@ std::unique_ptr<QFileDialog> MainWindow::makeFileDialog(QString title, QFileDial
 		"x-qtmdl/mdl",
 		"x-qtmdl/md2",
 		"x-qtmdl/md2f",
+		"x-qtmdl/md3",
 		"x-qtmdl/qim",
 		"application/octet-stream"
 	});

@@ -182,8 +182,6 @@ void QMDLRenderer::initializeGL()
     createBuiltInTexture<1, 1>(_whiteTexture, { 0xFF, 0xFF, 0xFF, 0xFF });
     createBuiltInTexture<1, 1>(_blackTexture, { 0x00, 0x00, 0x00, 0xFF });
 
-    glGenTextures(1, &_modelTexture);
-
     _modelProgram.program = createProgram(
         createShader(GL_VERTEX_SHADER, loadShader("model.vert.glsl")->c_str()),
         createShader(GL_FRAGMENT_SHADER, loadShader("model.frag.glsl")->c_str()));
@@ -635,13 +633,22 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     {
         if (params.mode == RenderMode::Flat)
             glBindTexture(GL_TEXTURE_2D, _whiteTexture);
-        else
-            glBindTexture(GL_TEXTURE_2D, _modelTexture);
-    
+
         glUniform1i(_modelProgram.shadedUniformLocation, params.shaded);
     }
 
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei) _bufferData.size());
+    GLint offset = 0;
+
+    for (auto &mesh : activeModel().meshes)
+    {
+        GLsizei count = mesh.triangles.size() * 3;
+
+        if (params.mode == RenderMode::Textured)
+            glBindTexture(GL_TEXTURE_2D, _modelTextures[mesh.assigned_skin.value_or(activeModel().selectedSkin.value())]);
+
+        glDrawArrays(GL_TRIANGLES, offset, count);
+        offset += count;
+    }
 
     glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
     
@@ -889,7 +896,12 @@ static void uploadToBuffer(GLuint buffer, bool full_upload, const std::vector<T>
 void QMDLRenderer::rebuildBuffer()
 {
     auto &model = activeModel();
-    size_t count = model.triangles.size() * 3;
+
+    size_t count = 0;
+
+    for (auto &mesh : model.meshes)
+        count += mesh.triangles.size() * 3;
+
     bool full_upload = _bufferData.size() < count;
     _bufferData.resize(count);
     _pointData.resize(count);
@@ -928,152 +940,155 @@ void QMDLRenderer::rebuildBuffer()
         int scale = uvEditor.getZoom();
         tcScale = QVector2D{(float) skin->width * scale, (float) skin->height * scale};
     }
-
-    for (auto &tri : model.triangles)
+    
+    for (auto &mesh : model.meshes)
     {
-        auto &from = model.frames[cur_frame];
-        auto &to = model.frames[next_frame];
+        for (auto &tri : mesh.triangles)
+        {
+            auto &from = mesh.frames[cur_frame];
+            auto &to = mesh.frames[next_frame];
         
-        auto &gv0 = model.vertices[tri.vertices[0]];
-        auto &gv1 = model.vertices[tri.vertices[1]];
-        auto &gv2 = model.vertices[tri.vertices[2]];
+            auto &gv0 = mesh.vertices[tri.vertices[0]];
+            auto &gv1 = mesh.vertices[tri.vertices[1]];
+            auto &gv2 = mesh.vertices[tri.vertices[2]];
 
-        auto &cv0 = from.vertices[tri.vertices[0]];
-        auto &cv1 = from.vertices[tri.vertices[1]];
-        auto &cv2 = from.vertices[tri.vertices[2]];
+            auto &cv0 = from.vertices[tri.vertices[0]];
+            auto &cv1 = from.vertices[tri.vertices[1]];
+            auto &cv2 = from.vertices[tri.vertices[2]];
 
-        auto &nv0 = to.vertices[tri.vertices[0]];
-        auto &nv1 = to.vertices[tri.vertices[1]];
-        auto &nv2 = to.vertices[tri.vertices[2]];
+            auto &nv0 = to.vertices[tri.vertices[0]];
+            auto &nv1 = to.vertices[tri.vertices[1]];
+            auto &nv2 = to.vertices[tri.vertices[2]];
         
-        std::array<QVector3D, 3> positions;
-        std::array<QVector3D, 3> normals;
+            std::array<QVector3D, 3> positions;
+            std::array<QVector3D, 3> normals;
         
-        if (frac == 0.0f)
-        {
-            positions[0] = cv0.position;
-            positions[1] = cv1.position;
-            positions[2] = cv2.position;
-
-            normals[0] = cv0.normal;
-            normals[1] = cv1.normal;
-            normals[2] = cv2.normal;
-        }
-        else if (frac == 1.0f)
-        {
-            positions[0] = nv0.position;
-            positions[1] = nv1.position;
-            positions[2] = nv2.position;
-
-            normals[0] = nv0.normal;
-            normals[1] = nv1.normal;
-            normals[2] = nv2.normal;
-        }
-        else
-        {
-            positions[0] = {
-                std::lerp(cv0.position[0], nv0.position[0], frac),
-                std::lerp(cv0.position[1], nv0.position[1], frac),
-                std::lerp(cv0.position[2], nv0.position[2], frac)
-            };
-            positions[1] = {
-                std::lerp(cv1.position[0], nv1.position[0], frac),
-                std::lerp(cv1.position[1], nv1.position[1], frac),
-                std::lerp(cv1.position[2], nv1.position[2], frac)
-            };
-            positions[2] = {
-                std::lerp(cv2.position[0], nv2.position[0], frac),
-                std::lerp(cv2.position[1], nv2.position[1], frac),
-                std::lerp(cv2.position[2], nv2.position[2], frac)
-            };
-
-            normals[0] = {
-                std::lerp(cv0.normal[0], nv0.normal[0], frac),
-                std::lerp(cv0.normal[1], nv0.normal[1], frac),
-                std::lerp(cv0.normal[2], nv0.normal[2], frac)
-            };
-            normals[1] = {
-                std::lerp(cv1.normal[0], nv1.normal[0], frac),
-                std::lerp(cv1.normal[1], nv1.normal[1], frac),
-                std::lerp(cv1.normal[2], nv1.normal[2], frac)
-            };
-            normals[2] = {
-                std::lerp(cv2.normal[0], nv2.normal[0], frac),
-                std::lerp(cv2.normal[1], nv2.normal[1], frac),
-                std::lerp(cv2.normal[2], nv2.normal[2], frac)
-            };
-        }
-            
-        auto &st0 = model.texcoords[tri.texcoords[0]];
-        auto &st1 = model.texcoords[tri.texcoords[1]];
-        auto &st2 = model.texcoords[tri.texcoords[2]];
-
-        {
-            auto &ov0 = _bufferData[n + 0];
-            auto &ov1 = _bufferData[n + 1];
-            auto &ov2 = _bufferData[n + 2];
-            
-            ov0.position = positions[0];
-            ov1.position = positions[1];
-            ov2.position = positions[2];
-            
-            auto &nv0 = _smoothNormalData[n + 0];
-            auto &nv1 = _smoothNormalData[n + 1];
-            auto &nv2 = _smoothNormalData[n + 2];
-
-            nv0 = normals[0];
-            nv1 = normals[1];
-            nv2 = normals[2];
-            
-            _flatNormalData[n + 0] =
-            _flatNormalData[n + 1] =
-            _flatNormalData[n + 2] = (nv0 + nv1 + nv2) / 3;
-            
-            if (!uvMatrix.isIdentity())
+            if (frac == 0.0f)
             {
-                ov0.texcoord = uvMatrix.map((st0.pos * tcScale).toVector3D()).toVector2D() / tcScale;
-                ov1.texcoord = uvMatrix.map((st1.pos * tcScale).toVector3D()).toVector2D() / tcScale;
-                ov2.texcoord = uvMatrix.map((st2.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                positions[0] = cv0.position;
+                positions[1] = cv1.position;
+                positions[2] = cv2.position;
+
+                normals[0] = cv0.normal;
+                normals[1] = cv1.normal;
+                normals[2] = cv2.normal;
+            }
+            else if (frac == 1.0f)
+            {
+                positions[0] = nv0.position;
+                positions[1] = nv1.position;
+                positions[2] = nv2.position;
+
+                normals[0] = nv0.normal;
+                normals[1] = nv1.normal;
+                normals[2] = nv2.normal;
             }
             else
             {
-                ov0.texcoord = st0.pos;
-                ov1.texcoord = st1.pos;
-                ov2.texcoord = st2.pos;
-            }
+                positions[0] = {
+                    std::lerp(cv0.position[0], nv0.position[0], frac),
+                    std::lerp(cv0.position[1], nv0.position[1], frac),
+                    std::lerp(cv0.position[2], nv0.position[2], frac)
+                };
+                positions[1] = {
+                    std::lerp(cv1.position[0], nv1.position[0], frac),
+                    std::lerp(cv1.position[1], nv1.position[1], frac),
+                    std::lerp(cv1.position[2], nv1.position[2], frac)
+                };
+                positions[2] = {
+                    std::lerp(cv2.position[0], nv2.position[0], frac),
+                    std::lerp(cv2.position[1], nv2.position[1], frac),
+                    std::lerp(cv2.position[2], nv2.position[2], frac)
+                };
 
-            if (MainWindow::instance().getSelectMode() == SelectMode::Face)
-            {
-                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected3D : EditorColorId::FaceUnselected3D);
-                ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected2D : EditorColorId::FaceUnselected2D);
+                normals[0] = {
+                    std::lerp(cv0.normal[0], nv0.normal[0], frac),
+                    std::lerp(cv0.normal[1], nv0.normal[1], frac),
+                    std::lerp(cv0.normal[2], nv0.normal[2], frac)
+                };
+                normals[1] = {
+                    std::lerp(cv1.normal[0], nv1.normal[0], frac),
+                    std::lerp(cv1.normal[1], nv1.normal[1], frac),
+                    std::lerp(cv1.normal[2], nv1.normal[2], frac)
+                };
+                normals[2] = {
+                    std::lerp(cv2.normal[0], nv2.normal[0], frac),
+                    std::lerp(cv2.normal[1], nv2.normal[1], frac),
+                    std::lerp(cv2.normal[2], nv2.normal[2], frac)
+                };
             }
-            else
-            {
-                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::FaceUnselected3D);
-                ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(EditorColorId::FaceUnselected2D);
-            }
-        }
-
-        {
-            auto &ov0 = _pointData[n + 0];
-            auto &ov1 = _pointData[n + 1];
-            auto &ov2 = _pointData[n + 2];
             
-            ov0.position = positions[0];
-            ov1.position = positions[1];
-            ov2.position = positions[2];
+            auto &st0 = mesh.texcoords[tri.texcoords[0]];
+            auto &st1 = mesh.texcoords[tri.texcoords[1]];
+            auto &st2 = mesh.texcoords[tri.texcoords[2]];
 
-            if (MainWindow::instance().getSelectMode() == SelectMode::Vertex)
             {
-                ov0.color = Settings().getEditorColor(gv0.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
-                ov1.color = Settings().getEditorColor(gv1.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
-                ov2.color = Settings().getEditorColor(gv2.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
-            }
-            else
-                ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::VertexTickUnselected3D);
-        }
+                auto &ov0 = _bufferData[n + 0];
+                auto &ov1 = _bufferData[n + 1];
+                auto &ov2 = _bufferData[n + 2];
+            
+                ov0.position = positions[0];
+                ov1.position = positions[1];
+                ov2.position = positions[2];
+            
+                auto &nv0 = _smoothNormalData[n + 0];
+                auto &nv1 = _smoothNormalData[n + 1];
+                auto &nv2 = _smoothNormalData[n + 2];
 
-        n += 3;
+                nv0 = normals[0];
+                nv1 = normals[1];
+                nv2 = normals[2];
+            
+                _flatNormalData[n + 0] =
+                _flatNormalData[n + 1] =
+                _flatNormalData[n + 2] = (nv0 + nv1 + nv2) / 3;
+            
+                if (!uvMatrix.isIdentity())
+                {
+                    ov0.texcoord = uvMatrix.map((st0.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                    ov1.texcoord = uvMatrix.map((st1.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                    ov2.texcoord = uvMatrix.map((st2.pos * tcScale).toVector3D()).toVector2D() / tcScale;
+                }
+                else
+                {
+                    ov0.texcoord = st0.pos;
+                    ov1.texcoord = st1.pos;
+                    ov2.texcoord = st2.pos;
+                }
+
+                if (MainWindow::instance().getSelectMode() == SelectMode::Face)
+                {
+                    ov0.color = ov1.color = ov2.color = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected3D : EditorColorId::FaceUnselected3D);
+                    ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(tri.selectedFace ? EditorColorId::FaceSelected2D : EditorColorId::FaceUnselected2D);
+                }
+                else
+                {
+                    ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::FaceUnselected3D);
+                    ov0.color_secondary = ov1.color_secondary = ov2.color_secondary = Settings().getEditorColor(EditorColorId::FaceUnselected2D);
+                }
+            }
+
+            {
+                auto &ov0 = _pointData[n + 0];
+                auto &ov1 = _pointData[n + 1];
+                auto &ov2 = _pointData[n + 2];
+            
+                ov0.position = positions[0];
+                ov1.position = positions[1];
+                ov2.position = positions[2];
+
+                if (MainWindow::instance().getSelectMode() == SelectMode::Vertex)
+                {
+                    ov0.color = Settings().getEditorColor(gv0.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+                    ov1.color = Settings().getEditorColor(gv1.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+                    ov2.color = Settings().getEditorColor(gv2.selected ? EditorColorId::VertexTickSelected3D : EditorColorId::VertexTickUnselected3D);
+                }
+                else
+                    ov0.color = ov1.color = ov2.color = Settings().getEditorColor(EditorColorId::VertexTickUnselected3D);
+            }
+
+            n += 3;
+        }
     }
 
     uploadToBuffer(_buffer, full_upload, _bufferData);
@@ -1091,28 +1106,34 @@ void QMDLRenderer::selectedSkinChanged()
 {
     makeCurrent();
     MainWindow::instance().updateRenders();
-
-    glBindTexture(GL_TEXTURE_2D, _modelTexture);
-
-    if (activeModel().skins.empty())
-    {
-        static constexpr uint32_t whitePixels = 0xFFFFFFFF;
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_BGRA, GL_UNSIGNED_BYTE, &whitePixels);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        return;
-    }
-
-    int skin = activeModel().selectedSkin.value();
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, activeModel().skins[skin].width, activeModel().skins[skin].height, 0, GL_BGRA, GL_UNSIGNED_BYTE, activeModel().skins[skin].image.bits());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
 void QMDLRenderer::modelLoaded()
 {
     selectedSkinChanged();
-    _2dOffset = -activeModel().boundsOfAllFrames().centroid();
+    _2dOffset = activeModel().boundsOfAllFrames().centroid();
+    // FIXME: reorganize so that this is applied in model space.
+    _2dOffset = { -_2dOffset.y(), _2dOffset.x(), -_2dOffset.z() };
+    _2dZoom = 1.0f;
+
+    int32_t skin_index = 0;
+
+    glDeleteTextures(_modelTextures.size(), _modelTextures.data());
+    _modelTextures.clear();
+
+    _modelTextures.resize(activeModel().skins.size());
+    glGenTextures(_modelTextures.size(), _modelTextures.data());
+
+    for (auto &skin : activeModel().skins)
+    {
+        glBindTexture(GL_TEXTURE_2D, _modelTextures[skin_index]);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, skin.width, skin.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, skin.image.bits());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+        skin_index++;
+    }
 }
 
 void QMDLRenderer::captureRenderDoc(bool)

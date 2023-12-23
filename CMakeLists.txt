@@ -74,11 +74,15 @@ endif()
 
 target_link_libraries(qtmdl PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::OpenGL Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
 
-file(GLOB_RECURSE SHADER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/res/shaders/*")
-file(GLOB_RECURSE MINE_SOURCE_FILES "${CMAKE_SOURCE_DIR}/mime/packages/*")
+file(GLOB SHADER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/res/shaders/*")
+file(GLOB RESOURCE_SOURCE_FILES "${CMAKE_SOURCE_DIR}/res/*")
+file(GLOB MINE_SOURCE_FILES "${CMAKE_SOURCE_DIR}/mime/packages/*")
 
 add_custom_command(
     TARGET qtmdl POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/res
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RESOURCE_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/res
+
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/res/shaders
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/res/shaders
 
@@ -94,7 +98,9 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::Gui> $<TARGET_FILE_DIR:qtmdl>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::OpenGLWidgets> $<TARGET_FILE_DIR:qtmdl>
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/platforms
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/imageformats
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::QWindowsIntegrationPlugin> $<TARGET_FILE_DIR:qtmdl>/platforms
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::QJpegPlugin> $<TARGET_FILE_DIR:qtmdl>/imageformats
     )
 endif ()
 
