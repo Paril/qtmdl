@@ -56,6 +56,26 @@ void SettingsContainer::setEditorColor(EditorColorId id, QColor color)
 	_settings.setValue(EditorColorNames[(size_t) id], color);
 }
 
+QByteArray SettingsContainer::getMainLayout()
+{
+	return _settings.value("mainLayout").toByteArray();
+}
+
+void SettingsContainer::setMainLayout(const QByteArray &data)
+{
+	_settings.setValue("mainLayout", data);
+}
+
+QByteArray SettingsContainer::getUVLayout()
+{
+	return _settings.value("uvLayout").toByteArray();
+}
+
+void SettingsContainer::setUVLayout(const QByteArray &data)
+{
+	_settings.setValue("uvLayout", data);
+}
+
 SettingsContainer &Settings()
 {
 	static SettingsContainer settings;

@@ -91,6 +91,9 @@ MainWindow::MainWindow(QWidget *parent) :
 		this->_ui->actionRedo->setEnabled(this->undoRedo().canRedo());
 	});
 #endif
+	
+	restoreState(Settings().getMainLayout(), 1);
+	this->uvEditor().restoreState(Settings().getUVLayout(), 1);
 }
 
 MainWindow::~MainWindow()
@@ -202,9 +205,9 @@ QMDLRenderer &MainWindow::mdlRenderer()
 
 void MainWindow::setCurrentWorldPosition(const QVector3D &position)
 {
-	this->_ui->doubleSpinBox->setValue(position.x());
-	this->_ui->doubleSpinBox_2->setValue(position.y());
-	this->_ui->doubleSpinBox_3->setValue(position.z());
+	//this->_ui->doubleSpinBox->setValue(position.x());
+	//this->_ui->doubleSpinBox_2->setValue(position.y());
+	//this->_ui->doubleSpinBox_3->setValue(position.z());
 }
 
 void MainWindow::animationChanged()
@@ -265,6 +268,9 @@ void MainWindow::updateRenders()
 
 /*virtual*/ void MainWindow::closeEvent(QCloseEvent *event) /*override*/
 {
+	Settings().setMainLayout(saveState(1));
+	Settings().setUVLayout(_uveditor->saveState(1));
+
 	delete _uveditor;
 }
 

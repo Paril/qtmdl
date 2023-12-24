@@ -12,25 +12,28 @@ QUVPainter::QUVPainter(QWidget *parent) :
 {
 }
 
-/*virtual*/ void QUVPainter::paintEvent(QPaintEvent *event) /*override*/
+/*virtual*/ void QUVPainter::paintEvent(QPaintEvent *) /*override*/
 {
     auto &model = MainWindow::instance().activeModel();
     auto skin = model.getSelectedSkin();
 
     if (!skin)
     {
-        setMinimumWidth(0);
-        setMinimumHeight(0);
+        setMinimumSize(0, 0);
+        setMaximumSize(0, 0);
         return;
     }
 
     auto &uvEditor = MainWindow::instance().uvEditor();
     int scale = uvEditor.getZoom();
     QVector2D tcScale{(float) skin->width * scale, (float) skin->height * scale};
-    setMinimumWidth((int) tcScale.x());
-    setMinimumHeight((int) tcScale.y());
-    QPainter painter(this);
-    painter.drawImage(QRect { 0, 0, (int) tcScale.x(), (int) tcScale.y() }, skin->image);
+    QRect imageSize { 0, 0, (int) tcScale.x(), (int) tcScale.y() };
+    setMinimumSize(imageSize.size());
+    setMaximumSize(imageSize.size());
+    QPainter painter;
+    painter.resetTransform();
+    painter.begin(this);
+    painter.drawImage(imageSize, skin->image);
     
     QMatrix4x4 drag = getDragMatrix();
 
@@ -105,6 +108,8 @@ QUVPainter::QUVPainter(QWidget *parent) :
         painter.setBrush(QBrush(QColor(0, 0, 0, 0)));
         painter.drawRect(_dragWorldPos.x(), _dragWorldPos.y(), _dragPos.x() - _dragWorldPos.x(), _dragPos.y() - _dragWorldPos.y());
     }
+
+    painter.end();
 }
 
 void QUVPainter::mousePressEvent(QMouseEvent *e)
@@ -142,7 +147,7 @@ void QUVPainter::rectangleSelect(QMouseEvent *e, QRectF rect, QVector2D tcScale)
         mutator.syncSelectionUV(0);
         MainWindow::instance().updateRenders();
     }
-}
+    }
 
 void QUVPainter::mouseReleaseEvent(QMouseEvent *e)
 {
@@ -269,7 +274,7 @@ void QUVPainter::mouseMoveEvent(QMouseEvent *event)
         }
         else
             _dragPos = pos;
-
+        
         MainWindow::instance().updateRenders();
         return;
     }

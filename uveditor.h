@@ -66,6 +66,7 @@ private:
     void zoomOut();
     void nextSkin();
     void prevSkin();
+    void selectedSkinChanged();
 
     Ui::UVEditor *_ui;
     int _zoom = 1;

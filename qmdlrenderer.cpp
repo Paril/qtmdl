@@ -493,7 +493,9 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
         
         update();
         
-        if (MainWindow::instance().selectedTool() == EditorTool::Pan)
+        if (MainWindow::instance().selectedTool() == EditorTool::Select)
+            _dragPos = pos;
+        else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
             _dragPos = { QtUtils::wrap(pos.x(), 0, static_cast<int>(width() * devicePixelRatio()) - 1), QtUtils::wrap(pos.y(), 0, static_cast<int>(height() * devicePixelRatio()) - 1) };
         else if (_focusedQuadrant != QuadrantFocus::None)
         {
@@ -598,7 +600,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     }
 
     glUseProgram(_modelProgram.program);
-    glUniform1i(_modelProgram.secondarycolorsUniformLocation, is_2d);
+    glUniform1i(_modelProgram.secondarycolorsUniformLocation, is_2d && params.mode == RenderMode::Wireframe);
     glUniformMatrix4fv(_modelProgram.projectionUniformLocation, 1, false, projection.data());
 
     if (_dragging && (_focusedQuadrant == QuadrantFocus::TopLeft || _focusedQuadrant == QuadrantFocus::TopRight ||
@@ -608,6 +610,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     // model
+    glDisable(GL_BLEND);
     glBindVertexArray(_vao);
     glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -649,6 +652,7 @@ void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         glDrawArrays(GL_TRIANGLES, offset, count);
         offset += count;
     }
+    glEnable(GL_BLEND);
 
     glVertexAttrib4f(ATTRIB_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
     

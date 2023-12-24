@@ -2,6 +2,8 @@
 
 #include <QWidget>
 #include <QVector2D>
+#include <QOpenGLWidget>
+#include <QImage>
 
 class QUVPainter : public QWidget
 {

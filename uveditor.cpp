@@ -278,6 +278,22 @@ void UVEditor::resetZoom()
     this->_ui->uvDrawArea->update();
 }
 
+void UVEditor::selectedSkinChanged()
+{
+    auto &model = MainWindow::instance().activeModel();
+    
+    if (!model.selectedSkin.has_value())
+    {
+        this->_ui->label_5->setText("N/A");
+        this->_ui->label_skinName->setText("N/A");
+    }
+    else
+    {
+    	this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value()));
+        this->_ui->label_skinName->setText(model.skins[model.selectedSkin.value()].name.c_str());
+    }
+}
+
 void UVEditor::nextSkin()
 {
     auto &model = MainWindow::instance().activeModel();
@@ -286,7 +302,7 @@ void UVEditor::nextSkin()
     if (!model.skins.empty())
     {
         mutator.setNextSkin();
-	    this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
+        selectedSkinChanged();
         MainWindow::instance().mdlRenderer().selectedSkinChanged();
     }
 }
@@ -299,18 +315,13 @@ void UVEditor::prevSkin()
     if (!model.skins.empty())
     {
         mutator.setPreviousSkin();
-	    this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value_or(0)));
+        selectedSkinChanged();
         MainWindow::instance().mdlRenderer().selectedSkinChanged();
     }
 }
 
 void UVEditor::modelLoaded()
 {
-    auto &model = MainWindow::instance().activeModel();
-    
-    if (!model.selectedSkin.has_value())
-        this->_ui->label_5->setText("N/A");
-    else
-    	this->_ui->label_5->setText(QString::asprintf("%i", model.selectedSkin.value()));
+    selectedSkinChanged();
     resetZoom();
 }

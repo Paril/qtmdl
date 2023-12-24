@@ -116,6 +116,12 @@ struct SettingsContainer
 	const QColor &getEditorColor(EditorColorId id);
 	void setEditorColor(EditorColorId id, QColor color);
 
+	QByteArray getMainLayout();
+	void setMainLayout(const QByteArray &data);
+
+	QByteArray getUVLayout();
+	void setUVLayout(const QByteArray &data);
+
 private:
 	QSettings _settings;
 	QString _modelDialogLocation;
